@@ -142,12 +142,24 @@ copy_channel(const PNMImage &copy, int src_channel, int dest_channel) {
     return;
   }
   // Do the actual copying
-  for (int x = 0; x < _x_size; x++) {
-    for (int y = 0; y < _y_size; y++) {
-      LColorf t = get_xel_a(x, y);
-      LColorf o = copy.get_xel_a(x, y);
-      t.set_cell(dest_channel, o.get_cell(src_channel));
-      set_xel_a(x, y, t);
+  if (get_maxval() == copy.get_maxval()
+      && get_color_space() == copy.get_color_space()) {
+    // same format, fast copy
+    for (int x = 0; x < _x_size; x++) {
+      for (int y = 0; y < _y_size; y++) {
+        xelval v = copy.get_channel_val(x, y, src_channel);
+        set_channel_val(x, y, dest_channel, v);
+      }
+    }
+  } else {
+    // slow loop, converting color spaces
+    for (int x = 0; x < _x_size; x++) {
+      for (int y = 0; y < _y_size; y++) {
+        LColorf t = get_xel_a(x, y);
+        LColorf o = copy.get_xel_a(x, y);
+        t.set_cell(dest_channel, o.get_cell(src_channel));
+        set_xel_a(x, y, t);
+      }
     }
   }
 }
@@ -1589,6 +1601,40 @@ threshold(const PNMImage &select_image, int channel, float threshold,
     }
   }
 }
+
+
+////////////////////////////////////////////////////////////////////
+//     Function: PNMImage::chroma_screen
+//       Access: Published
+//  Description: Computes the distance between each pixel and 'key',
+//               and if less than or equal to 'threshold', modifies
+//               the pixel by lerping it with the 'replace' value,
+//               as in:
+//
+//                 float alpha = dist * scale;
+//                 LColorf v = (rgb * alpha) + (replace * (1.0 - alpha));
+//                 v.set_w(alpha);
+//                 set_xel_a(x, y, v);
+//
+////////////////////////////////////////////////////////////////////
+void PNMImage::
+chroma_screen(const LColorf& key, const LColorf& replace, float threshold, float scale) {
+  int x, y;
+
+  for (y = 0; y < get_y_size(); y++) {
+    for (x = 0; x < get_x_size(); x++) {
+      LColorf rgb = get_xel_a(x, y);
+      float dist = (rgb - key).length();
+      if (dist <= threshold) {
+        float alpha = dist * scale;
+        LColorf v = (rgb * alpha) + (replace * (1.0 - alpha));
+        v.set_w(alpha);
+        set_xel_a(x, y, v);
+      }
+    }
+  }
+}
+
 
 ////////////////////////////////////////////////////////////////////
 //     Function: PNMImage::fill_distance_inside

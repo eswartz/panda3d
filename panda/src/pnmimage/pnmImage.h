@@ -229,6 +229,9 @@ PUBLISHED:
                          float pixel_scale = 1.0);
   void threshold(const PNMImage &select_image, int channel, float threshold,
                  const PNMImage &lt, const PNMImage &ge);
+
+  void chroma_screen(const LColorf &key, const LColorf& replace, float threshold, float pixel_scale);
+
   BLOCKING void fill_distance_inside(const PNMImage &mask, float threshold, int radius, bool shrink_from_border);
   BLOCKING void fill_distance_outside(const PNMImage &mask, float threshold, int radius);
 
