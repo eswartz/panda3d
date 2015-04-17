@@ -724,12 +724,14 @@ set_properties_now(WindowProperties &properties) {
           GrabModeAsync, _xwindow, cursor, CurrentTime) != GrabSuccess) {
         x11display_cat.error() << "Failed to grab pointer!\n";
       } else {
+        _properties.set_mouse_grabbed(true);
         properties.clear_mouse_grabbed();
       }
     } else {
       if (XUngrabPointer(_display, CurrentTime) != GrabSuccess) {
         x11display_cat.error() << "Failed to ungrab pointer!\n";
       } else {
+        _properties.set_mouse_grabbed(false);
         properties.clear_mouse_grabbed();
       }
     }
