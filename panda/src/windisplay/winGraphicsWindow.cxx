@@ -36,6 +36,7 @@ WinGraphicsWindow *WinGraphicsWindow::_cursor_window = NULL;
 bool WinGraphicsWindow::_cursor_hidden = false;
 
 WinGraphicsWindow *WinGraphicsWindow::_mouse_grabbed_window = NULL;
+RECT WinGraphicsWindow::_mouse_ungrabbed_cliprect;
 
 // These are used to save the previous state of the fancy Win2000
 // effects that interfere with rendering when the mouse wanders into a
@@ -363,18 +364,39 @@ set_properties_now(WindowProperties &properties) {
   }
 
   if (properties.has_mouse_grabbed()) {
-    if (properties.get_mouse_grabbed()) {
+    if (properties.get_mouse_grabbed() != _properties.get_mouse_grabbed()) {
       // capturing window must be foreground, implicitly
       if (!SetActiveWindow(_hWnd)) {
            windisplay_cat.warning()
              << "SetForegroundWindow() failed!\n";
       }
       SetCapture(_hWnd);
-      _mouse_grabbed_window = this;
-      _properties.set_mouse_grabbed(true);
-      windisplay_cat.info() << "Grabbing window " << this << endl;
-    } else {
-      ReleaseCapture();
+
+
+      RECT clip;
+      if (!GetWindowRect(_hWnd, &clip)) {
+        if (windisplay_cat.is_debug()) {
+          windisplay_cat.debug()
+            << "GetClientRect() failed in set_properties_now.  Cannot grab mouse yet.\n";
+        }
+      }
+
+      windisplay_cat.debug()
+              << "ClipCursor() to " << clip.left << "," << clip.top << " to "
+              << clip.right << "," << clip.bottom << endl;
+
+      if (!ClipCursor(&clip)) {
+        windisplay_cat.debug()
+                << "ClipCursor() failed in handle_reshape.  Ignoring.\n";
+      } else {
+        // even if GetClientRect failed, we should get an WM_SIZE eventually.
+        _mouse_grabbed_window = this;
+        _properties.set_mouse_grabbed(true);
+        windisplay_cat.info() << "Grabbing window " << this << endl;
+      }
+    } else if (properties.get_mouse_grabbed() != _properties.get_mouse_grabbed()) {
+      ClipCursor(&_mouse_ungrabbed_cliprect);
+      //ReleaseCapture();
       _mouse_grabbed_window = NULL;
       _properties.set_mouse_grabbed(false);
       windisplay_cat.info() << "Ungrabbing window " << this << endl;
@@ -771,6 +793,15 @@ handle_reshape() {
         << "ClientToScreen() failed in handle_reshape.  Ignoring.\n";
     }
     return;
+  }
+
+  if (_mouse_grabbed_window == this) {
+    RECT window_rect;
+    GetWindowRect(_hWnd, &window_rect);
+    if (!ClipCursor(&window_rect)) {
+      windisplay_cat.debug()
+              << "ClipCursor() failed in handle_reshape.  Ignoring.\n";
+    }
   }
 
   WindowProperties properties;
@@ -2160,10 +2191,11 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 ////////////////////////////////////////////////////////////////////
 void WinGraphicsWindow::
 release_mouse() {
-  if (_mouse_grabbed_window != this) {
-    windisplay_cat.debug() << "ReleaseCapture since " << _mouse_grabbed_window << " != " << this << endl;
-    ReleaseCapture();
-  }
+  ReleaseCapture();
+//  if (_mouse_grabbed_window != this) {
+//    windisplay_cat.debug() << "ReleaseCapture since " << _mouse_grabbed_window << " != " << this << endl;
+//    ReleaseCapture();
+//  }
 }
 
 ////////////////////////////////////////////////////////////////////

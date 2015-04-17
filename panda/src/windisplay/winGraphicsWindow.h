@@ -220,6 +220,7 @@ private:
   // mouse_grabbed property.  Since only one window in the
   // system has capture state, this can be a global.
   static WinGraphicsWindow *_mouse_grabbed_window;
+  static RECT _mouse_ungrabbed_cliprect;
 
   // Since the Panda API requests icons and cursors by filename, we
   // need a table mapping filenames to handles, so we can avoid
