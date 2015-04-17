@@ -364,11 +364,20 @@ set_properties_now(WindowProperties &properties) {
 
   if (properties.has_mouse_grabbed()) {
     if (properties.get_mouse_grabbed()) {
+      // capturing window must be foreground, implicitly
+      if (!SetActiveWindow(_hWnd)) {
+           windisplay_cat.warning()
+             << "SetForegroundWindow() failed!\n";
+      }
       SetCapture(_hWnd);
       _mouse_grabbed_window = this;
+      _properties.set_mouse_grabbed(true);
+      windisplay_cat.info() << "Grabbing window " << this << endl;
     } else {
       ReleaseCapture();
       _mouse_grabbed_window = NULL;
+      _properties.set_mouse_grabbed(false);
+      windisplay_cat.info() << "Ungrabbing window " << this << endl;
     }
     properties.clear_mouse_grabbed();
   }
@@ -410,6 +419,11 @@ void WinGraphicsWindow::
 close_window() {
   set_cursor_out_of_window();
   DestroyWindow(_hWnd);
+
+  // destroyed window no longer grabbing
+  if (_mouse_grabbed_window == this) {
+    _mouse_grabbed_window = NULL;
+  }
 
   if (is_fullscreen()) {
     // revert to default display mode.
@@ -1582,8 +1596,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    if (_mouse_grabbed_window != this)
-      ReleaseCapture();
+    release_mouse();
     _input_devices[0].button_up(MouseButton::button(0), get_message_time());
     return 0;
 
@@ -1591,8 +1604,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    if (_mouse_grabbed_window != this)
-      ReleaseCapture();
+    release_mouse();
     _input_devices[0].button_up(MouseButton::button(1), get_message_time());
     return 0;
 
@@ -1600,8 +1612,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    if (_mouse_grabbed_window != this)
-      ReleaseCapture();
+    release_mouse();
     _input_devices[0].button_up(MouseButton::button(2), get_message_time());
     return 0;
 
@@ -1610,8 +1621,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       if (_lost_keypresses) {
         resend_lost_keypresses();
       }
-      if (_mouse_grabbed_window != this)
-        ReleaseCapture();
+      release_mouse();
       int whichButton = GET_XBUTTON_WPARAM(wparam);
       if (whichButton == XBUTTON1) {
         _input_devices[0].button_up(MouseButton::button(3), get_message_time());
@@ -2123,6 +2133,15 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         CloseTouchInputHandle((HTOUCHINPUT)lparam);
     break;
 #endif
+
+  case WM_CAPTURECHANGED:
+    if (_mouse_grabbed_window == this && lparam != 0 && (HWND) lparam != _hWnd) {
+      windisplay_cat.debug() << "Ungrabbed window from external!\n";
+      _mouse_grabbed_window = NULL;
+      properties.set_mouse_grabbed(false);
+      system_changed_properties(properties);
+    }
+    break;
   }
 
   //do custom messages processing if any has been set
@@ -2133,6 +2152,19 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
   return DefWindowProcW(hwnd, msg, wparam, lparam);
 }
 
+////////////////////////////////////////////////////////////////////
+//     Function: WinGraphicsWindow::static_window_proc
+//       Access: Private
+//  Description: Release the mouse if it wasn't grabbed by the
+//               receiver.
+////////////////////////////////////////////////////////////////////
+void WinGraphicsWindow::
+release_mouse() {
+  if (_mouse_grabbed_window != this) {
+    windisplay_cat.debug() << "ReleaseCapture since " << _mouse_grabbed_window << " != " << this << endl;
+    ReleaseCapture();
+  }
+}
 
 ////////////////////////////////////////////////////////////////////
 //     Function: WinGraphicsWindow::static_window_proc

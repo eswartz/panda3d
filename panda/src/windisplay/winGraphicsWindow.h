@@ -140,6 +140,8 @@ private:
   INLINE void set_cursor_in_window();
   INLINE void set_cursor_out_of_window();
 
+  void release_mouse();
+
   INLINE static double get_message_time();
 
   void resend_lost_keypresses();
