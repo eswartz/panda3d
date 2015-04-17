@@ -35,6 +35,8 @@ WinGraphicsWindow *WinGraphicsWindow::_creating_window = NULL;
 WinGraphicsWindow *WinGraphicsWindow::_cursor_window = NULL;
 bool WinGraphicsWindow::_cursor_hidden = false;
 
+WinGraphicsWindow *WinGraphicsWindow::_mouse_grabbed_window = NULL;
+
 // These are used to save the previous state of the fancy Win2000
 // effects that interfere with rendering when the mouse wanders into a
 // window's client area.
@@ -359,6 +361,18 @@ set_properties_now(WindowProperties &properties) {
       }
     }
   }
+
+  if (properties.has_mouse_grabbed()) {
+    if (properties.get_mouse_grabbed()) {
+      SetCapture(_hWnd);
+      _mouse_grabbed_window = this;
+    } else {
+      ReleaseCapture();
+      _mouse_grabbed_window = NULL;
+    }
+    properties.clear_mouse_grabbed();
+  }
+
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1568,7 +1582,8 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    ReleaseCapture();
+    if (_mouse_grabbed_window != this)
+      ReleaseCapture();
     _input_devices[0].button_up(MouseButton::button(0), get_message_time());
     return 0;
 
@@ -1576,7 +1591,8 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    ReleaseCapture();
+    if (_mouse_grabbed_window != this)
+      ReleaseCapture();
     _input_devices[0].button_up(MouseButton::button(1), get_message_time());
     return 0;
 
@@ -1584,7 +1600,8 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    ReleaseCapture();
+    if (_mouse_grabbed_window != this)
+      ReleaseCapture();
     _input_devices[0].button_up(MouseButton::button(2), get_message_time());
     return 0;
 
@@ -1593,7 +1610,8 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       if (_lost_keypresses) {
         resend_lost_keypresses();
       }
-      ReleaseCapture();
+      if (_mouse_grabbed_window != this)
+        ReleaseCapture();
       int whichButton = GET_XBUTTON_WPARAM(wparam);
       if (whichButton == XBUTTON1) {
         _input_devices[0].button_up(MouseButton::button(3), get_message_time());
