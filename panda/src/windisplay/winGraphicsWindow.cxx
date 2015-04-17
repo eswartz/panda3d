@@ -377,26 +377,25 @@ set_properties_now(WindowProperties &properties) {
       if (!GetWindowRect(_hWnd, &clip)) {
         if (windisplay_cat.is_debug()) {
           windisplay_cat.debug()
-            << "GetClientRect() failed in set_properties_now.  Cannot grab mouse yet.\n";
+            << "GetWindowRect() failed in set_properties_now.  Cannot grab mouse.\n";
         }
-      }
-
-      windisplay_cat.debug()
-              << "ClipCursor() to " << clip.left << "," << clip.top << " to "
-              << clip.right << "," << clip.bottom << endl;
-
-      if (!ClipCursor(&clip)) {
-        windisplay_cat.debug()
-                << "ClipCursor() failed in handle_reshape.  Ignoring.\n";
       } else {
-        // even if GetClientRect failed, we should get an WM_SIZE eventually.
-        _mouse_grabbed_window = this;
-        _properties.set_mouse_grabbed(true);
-        windisplay_cat.info() << "Grabbing window " << this << endl;
+        windisplay_cat.debug()
+                << "ClipCursor() to " << clip.left << "," << clip.top << " to "
+                << clip.right << "," << clip.bottom << endl;
+
+        if (!ClipCursor(&clip)) {
+          windisplay_cat.debug()
+                  << "ClipCursor() failed in handle_reshape.  Ignoring.\n";
+        } else {
+          // even if GetClientRect failed, we should get an WM_SIZE eventually.
+          _mouse_grabbed_window = this;
+          _properties.set_mouse_grabbed(true);
+          windisplay_cat.info() << "Grabbing window " << this << endl;
+        }
       }
     } else if (properties.get_mouse_grabbed() != _properties.get_mouse_grabbed()) {
       ClipCursor(&_mouse_ungrabbed_cliprect);
-      //ReleaseCapture();
       _mouse_grabbed_window = NULL;
       _properties.set_mouse_grabbed(false);
       windisplay_cat.info() << "Ungrabbing window " << this << endl;
@@ -797,8 +796,11 @@ handle_reshape() {
 
   if (_mouse_grabbed_window == this) {
     RECT window_rect;
-    GetWindowRect(_hWnd, &window_rect);
-    if (!ClipCursor(&window_rect)) {
+    if (!GetWindowRect(_hWnd, &window_rect)) {
+      windisplay_cat.debug()
+                    << "GetWindowRect() failed in handle_reshape.  Ignoring.\n";
+    }
+    else if (!ClipCursor(&window_rect)) {
       windisplay_cat.debug()
               << "ClipCursor() failed in handle_reshape.  Ignoring.\n";
     }
@@ -1627,7 +1629,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    release_mouse();
+    ReleaseCapture();
     _input_devices[0].button_up(MouseButton::button(0), get_message_time());
     return 0;
 
@@ -1635,7 +1637,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    release_mouse();
+    ReleaseCapture();
     _input_devices[0].button_up(MouseButton::button(1), get_message_time());
     return 0;
 
@@ -1643,7 +1645,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    release_mouse();
+    ReleaseCapture();
     _input_devices[0].button_up(MouseButton::button(2), get_message_time());
     return 0;
 
@@ -1652,7 +1654,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       if (_lost_keypresses) {
         resend_lost_keypresses();
       }
-      release_mouse();
+      ReleaseCapture();
       int whichButton = GET_XBUTTON_WPARAM(wparam);
       if (whichButton == XBUTTON1) {
         _input_devices[0].button_up(MouseButton::button(3), get_message_time());
@@ -2181,21 +2183,6 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
   }
 
   return DefWindowProcW(hwnd, msg, wparam, lparam);
-}
-
-////////////////////////////////////////////////////////////////////
-//     Function: WinGraphicsWindow::static_window_proc
-//       Access: Private
-//  Description: Release the mouse if it wasn't grabbed by the
-//               receiver.
-////////////////////////////////////////////////////////////////////
-void WinGraphicsWindow::
-release_mouse() {
-  ReleaseCapture();
-//  if (_mouse_grabbed_window != this) {
-//    windisplay_cat.debug() << "ReleaseCapture since " << _mouse_grabbed_window << " != " << this << endl;
-//    ReleaseCapture();
-//  }
 }
 
 ////////////////////////////////////////////////////////////////////

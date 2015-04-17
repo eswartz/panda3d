@@ -908,9 +908,22 @@ clear_parent_window() {
 ////////////////////////////////////////////////////////////////////
 //     Function: WindowProperties::set_mouse_grabbed
 //       Access: Published
-//  Description: Specifies whether the primary mouse is grabbed by
-//               the window (true) or the normal ungrabbed mode
-//               (false, the default).
+//  Description: Specifies whether the primary mouse is grabbed
+//               by the window (true) or is free to move beyond the
+//               window (false, the default).
+//
+//               This is intended to handle cases like FPSes where
+//               the user can move the mouse arbitrarily while
+//               ensuring Panda3D always gets mouse events.
+//
+//               This operates differently on different OSes,
+//               however.  On Windows, the mouse is physically
+//               restricted to the window boundary.  On others,
+//               the mouse reports coordinates outside the window.
+//
+//               To implement the FPS use case, periodically
+//               move the pointer to the center of the window
+//               and track movement deltas.
 ////////////////////////////////////////////////////////////////////
 INLINE void WindowProperties::
 set_mouse_grabbed(bool mouse_grabbed) {
