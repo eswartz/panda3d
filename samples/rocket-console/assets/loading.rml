@@ -1,0 +1,35 @@
+<rml>
+	<head>
+		<title>Main Menu</title>
+		<link type="text/template" href="window.rml" />
+		<style>
+			body
+			{
+				width: 400px;
+				height: 225px;
+
+				margin: auto;
+	
+				background-color: #44f;
+			}
+						
+			
+			div#title_bar_content
+			{
+				font-size: 48;
+				
+				//text-align: left;
+				position: absolute;
+				top: 40%;
+				//vertical-align: center;
+				
+			}
+						
+		</style>
+	</head>
+	<body template="window">
+		<div id="title_bar_content">
+			<label id="loadingLabel">Loading...</label>
+		</div>
+	</body>
+</rml>
