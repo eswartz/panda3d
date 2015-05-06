@@ -1,5 +1,5 @@
 <rml>
-	<head>
+	<head >
 		<title>Main Menu</title>
 		<link type="text/template" href="window.rml" />
 		<style>
@@ -26,9 +26,22 @@
 			}
 						
 		</style>
+		
+		<script>
+		
+import _rocketcore as rocket
+
+# Can override event handler functions
+def OnKeyDown(event, document):
+	keyId = event.parameters['key_identifier'] 
+	if keyId == rocket.key_identifier.RETURN or keyId == rocket.key_identifier.ESCAPE:
+		document.Close()
+		
+	</script>
+		
 	</head>
 	<body template="window">
-		<div id="title_bar_content">
+		<div id="title_bar_content" onclick='document.Close()'>
 			<label id="loadingLabel">Loading...</label>
 		</div>
 	</body>

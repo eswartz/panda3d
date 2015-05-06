@@ -1,21 +1,39 @@
 <template name="window" content="content">
-<head>
-	<link type="text/rcss" href="rkt.rcss"/>
-	<link type="text/rcss" href="window.rcss"/>
-</head>
-<body class="window">
-	<div id="title_bar">
-		<handle move_target="#document">
-		<span id="title">Panda3D Rocket Sample</span>
-			
-			<div id="title_bar_content">
-			</div>
-		</handle>
-	</div>
-	<div id="window">
-		<div id="content" onclick="LoadMenu('main_menu')">
+	<head>
+		<link type="text/rcss" href="rkt.rcss"/>
+		<link type="text/rcss" href="window.rcss"/>
+		
+		
+		<script>
+import _rocketcore as rocket
+
+def OnLoad(event, document):
+	pass
+
+def OnKeyDown(event, document):
+	pass
+		</script>
+	</head>
+
+
+	<body class="window" onkeydown='OnKeyDown(event, document)'>
+		<div id="title_bar">
+			<handle move_target="#document">
+			<span id="title">Rocket Sample</span>
+				
+				<div id="title_bar_content">
+				</div>
+			</handle>
 		</div>
-	</div>
-	<handle size_target="#document" style="position: absolute; width: 16px; height: 16px; bottom: 0px; right: 0px;"></handle>
-</body>
+		<div id="window">
+			<div id="content">
+			</div>
+		</div>
+		
+		<!-- drag and drop of window -->
+		<handle size_target="#document"
+		 	style="position: absolute; width: 16px; height: 16px; bottom: 0px; right: 0px;">
+		</handle>
+	</body>
+	
 </template>
