@@ -7,16 +7,19 @@
 		<script>
 import _rocketcore as rocket
 
-def OnLoad(event, document):
-	pass
+def OnLoad(document):
+    print "Rocket document loaded"
 
+# event handlers from templates can be overridden in windows using them
 def OnKeyDown(event, document):
-	pass
+    keyId = event.parameters['key_identifier']
+    print "Base keydown: unhandled key ",keyId
+
 		</script>
 	</head>
 
 
-	<body class="window" onkeydown='OnKeyDown(event, document)'>
+	<body class="window" onload='OnLoad(document)' onkeydown='OnKeyDown(event, document)'>
 		<div id="title_bar">
 			<handle move_target="#document">
 			<span id="title">Rocket Sample</span>

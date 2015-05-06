@@ -31,24 +31,22 @@
 		
 import _rocketcore as rocket
 
-# Can override event handler functions
+# This handler overrides the 'onkeydown' handler from the template
 def OnKeyDown(event, document):
-	keyId = event.parameters['key_identifier'] 
-	try:
-		if keyId == rocket.key_identifier.ENTER:
-			document.Close()
-			return
-	except AttributeError:
-		pass
-	
+	keyId = event.parameters['key_identifier']
 	if keyId in [ rocket.key_identifier.RETURN,
-				rocket.key_identifier.ESCAPE ]:
-		document.Close()
-		
+				rocket.key_identifier.ESCAPE,
+				 rocket.key_identifier.SPACE ]:
+		FireClosing(document)
+
+# custom event
+def FireClosing(document):
+    document.DispatchEvent("aboutToClose", { }, False)
+
 	</script>
 		
 	</head>
-	<body template="window" onclick='document.Close()'>
+	<body id='window' template="window" onclick='FireClosing(document)'>
 		<div id="title_bar_content" >
 			<label id="loadingLabel">Loading...</label>
 		</div>
