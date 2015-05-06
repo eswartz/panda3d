@@ -3,34 +3,9 @@
 	<head>
 		<title>Administrative Console</title>
 		<link type="text/rcss" href="console.rcss"/>
-		<style>
-			body
-			{
-				width: 400px;
-				height: 225px;
-
-				margin: auto;
-	
-				background-color: #44f;
-			}
-						
-			
-			div#title_bar_content
-			{
-				font-size: 48;
-				
-				//text-align: left;
-				position: absolute;
-				top: 40%;
-				//vertical-align: center;
-				
-			}
-						
-		</style>
 	</head>
-	<body template="window">
-		<div id="title_bar_content">
-			<label id="content">C:\</label>
-		</div>
+    <!-- events are bound strictly from code -->
+	<body >
+	    <text id="content" />
 	</body>
 </rml>
