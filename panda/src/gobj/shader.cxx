@@ -413,8 +413,10 @@ cp_dependency(ShaderMatInput inp) {
   if (inp == SMO_attr_fog || inp == SMO_attr_fogcolor) {
     dep |= SSD_fog;
   }
-  if ((inp == SMO_model_to_view)||
-      (inp == SMO_view_to_model)) {
+  if ((inp == SMO_model_to_view) ||
+      (inp == SMO_view_to_model) ||
+      (inp == SMO_model_to_apiview) ||
+      (inp == SMO_apiview_to_model)) {
     dep |= SSD_transform;
   }
   if ((inp == SMO_texpad_x) ||
@@ -1827,6 +1829,7 @@ cg_analyze_shader(const ShaderCaps &caps) {
   //    }
   //  }
 
+  cg_release_resources();
   return true;
 }
 
@@ -2655,9 +2658,12 @@ make(const string &body, ShaderLanguage lang) {
 #endif
 
   ShaderFile sbody(body);
-  ShaderTable::const_iterator i = _make_table.find(sbody);
-  if (i != _make_table.end() && (lang == SL_none || lang == i->second->_language)) {
-    return i->second;
+
+  if (cache_generated_shaders) {
+    ShaderTable::const_iterator i = _make_table.find(sbody);
+    if (i != _make_table.end() && (lang == SL_none || lang == i->second->_language)) {
+      return i->second;
+    }
   }
 
   PT(Shader) shader = new Shader(lang);
@@ -2676,7 +2682,9 @@ make(const string &body, ShaderLanguage lang) {
   }
 #endif
 
-  _make_table[sbody] = shader;
+  if (cache_generated_shaders) {
+    _make_table[sbody] = shader;
+  }
 
   if (dump_generated_shaders) {
     ostringstream fns;
@@ -2716,9 +2724,11 @@ make(ShaderLanguage lang, const string &vertex, const string &fragment,
 
   ShaderFile sbody(vertex, fragment, geometry, tess_control, tess_evaluation);
 
-  ShaderTable::const_iterator i = _make_table.find(sbody);
-  if (i != _make_table.end() && (lang == SL_none || lang == i->second->_language)) {
-    return i->second;
+  if (cache_generated_shaders) {
+    ShaderTable::const_iterator i = _make_table.find(sbody);
+    if (i != _make_table.end() && (lang == SL_none || lang == i->second->_language)) {
+      return i->second;
+    }
   }
 
   PT(Shader) shader = new Shader(lang);
@@ -2735,8 +2745,10 @@ make(ShaderLanguage lang, const string &vertex, const string &fragment,
   }
 #endif
 
+  if (cache_generated_shaders) {
+    _make_table[sbody] = shader;
+  }
 
-  _make_table[sbody] = shader;
   return shader;
 }
 
@@ -2757,16 +2769,22 @@ make_compute(ShaderLanguage lang, const string &body) {
   sbody._separate = true;
   sbody._compute = body;
 
-  ShaderTable::const_iterator i = _make_table.find(sbody);
-  if (i != _make_table.end() && (lang == SL_none || lang == i->second->_language)) {
-    return i->second;
+
+  if (cache_generated_shaders) {
+    ShaderTable::const_iterator i = _make_table.find(sbody);
+    if (i != _make_table.end() && (lang == SL_none || lang == i->second->_language)) {
+      return i->second;
+    }
   }
 
   PT(Shader) shader = new Shader(lang);
   shader->_filename = ShaderFile("created-shader");
   shader->_text = sbody;
 
-  _make_table[sbody] = shader;
+  if (cache_generated_shaders) {
+    _make_table[sbody] = shader;
+  }
+
   return shader;
 }
 
