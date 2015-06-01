@@ -1061,6 +1061,22 @@ blend(int x, int y, const LRGBColorf &val, float alpha) {
   blend(x, y, val[0], val[1], val[2], alpha);
 }
 
+
+////////////////////////////////////////////////////////////////////
+//     Function: PNMImage::over
+//       Access: Published
+//  Description: Performs the alpha compositing "over" operator to
+//               blend the indicated pixel value in with
+//               whatever was already in the image, based on the given
+//               alpha value.  An alpha of 1.0 is fully opaque and
+//               completely replaces whatever was there previously;
+//               alpha of 0.0 is fully transparent and does nothing.
+////////////////////////////////////////////////////////////////////
+INLINE void PNMImage::
+over(int x, int y, const LRGBColorf &val, float alpha) {
+  over(x, y, val[0], val[1], val[2], alpha);
+}
+
 ////////////////////////////////////////////////////////////////////
 //     Function: PNMImage::box_filter
 //       Access: Published

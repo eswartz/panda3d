@@ -204,10 +204,17 @@ PUBLISHED:
   INLINE void blend(int x, int y, const LRGBColorf &val, float alpha);
   void blend(int x, int y, float r, float g, float b, float alpha);
 
+  INLINE void over(int x, int y, const LRGBColorf &val, float alpha);
+  void over(int x, int y, float r, float g, float b, float alpha);
+
   void copy_sub_image(const PNMImage &copy, int xto, int yto,
                       int xfrom = 0, int yfrom = 0,
                       int x_size = -1, int y_size = -1);
   void blend_sub_image(const PNMImage &copy, int xto, int yto,
+                       int xfrom = 0, int yfrom = 0,
+                       int x_size = -1, int y_size = -1,
+                       float pixel_scale = 1.0);
+  void over_sub_image(const PNMImage &copy, int xto, int yto,
                        int xfrom = 0, int yfrom = 0,
                        int x_size = -1, int y_size = -1,
                        float pixel_scale = 1.0);
