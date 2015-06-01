@@ -1008,6 +1008,51 @@ blend(int x, int y, float r, float g, float b, float alpha) {
 }
 
 ////////////////////////////////////////////////////////////////////
+//     Function: PNMImage::over
+//       Access: Published
+//  Description: Performs the alpha compositing "over" operator to
+//               blend the indicated pixel value in with
+//               whatever was already in the image, based on the given
+//               alpha value.  An alpha of 1.0 is fully opaque and
+//               completely replaces whatever was there previously;
+//               alpha of 0.0 is fully transparent and does nothing.
+////////////////////////////////////////////////////////////////////
+void PNMImage::
+over(int x, int y, float r, float g, float b, float alpha) {
+  if (alpha >= 1.0) {
+    // Completely replace the previous color.
+    if (has_alpha()) {
+      set_alpha(x, y, 1.0);
+    }
+    set_xel(x, y, r, g, b);
+
+  } else if (alpha > 0.0f) {
+    // Blend with the previous color.
+    float prev_alpha = has_alpha() ? get_alpha(x, y) : 1.0f;
+
+    if (prev_alpha == 0.0f) {
+      // Nothing there previously; replace with this new color.
+      set_alpha(x, y, alpha);
+      set_xel(x, y, r, g, b);
+
+    } else {
+      // Blend the color with the previous color.
+      LRGBColorf prev_rgb = get_xel(x, y);
+
+      r = r + (1.0f - alpha) * prev_rgb.get_x();
+      g = g + (1.0f - alpha) * prev_rgb.get_y();
+      b = b + (1.0f - alpha) * prev_rgb.get_z();
+      alpha = prev_alpha + alpha * (1.0f - prev_alpha);
+
+      if (has_alpha()) {
+        set_alpha(x, y, alpha);
+      }
+      set_xel(x, y, r, g, b);
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////
 //     Function: PNMImage::set_array
 //       Access: Public
 //  Description: Replaces the underlying PNMImage array with the
@@ -1142,6 +1187,53 @@ blend_sub_image(const PNMImage &copy, int xto, int yto,
     for (y = ymin; y < ymax; y++) {
       for (x = xmin; x < xmax; x++) {
         blend(x, y, copy.get_xel(x - xmin + xfrom, y - ymin + yfrom),
+              pixel_scale);
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////
+//     Function: PNMImage::over_sub_image
+//       Access: Published
+//  Description: Behaves like copy_sub_image(), except the alpha
+//               channel of the copy is used to apply the "over"
+//               alpha compositing operator to blend the copy into
+//               the destination image, instead of overwriting pixels
+//               unconditionally.
+//
+//               If pixel_scale is not 1.0, it specifies an amount to
+//               scale each *alpha* value of the source image before
+//               applying it to the target image.
+//
+//               If pixel_scale is 1.0 and the copy has no alpha
+//               channel, this degenerates into copy_sub_image().
+////////////////////////////////////////////////////////////////////
+void PNMImage::
+over_sub_image(const PNMImage &copy, int xto, int yto,
+                int xfrom, int yfrom, int x_size, int y_size,
+                float pixel_scale) {
+  if (!copy.has_alpha() && pixel_scale == 1.0) {
+    copy_sub_image(copy, xto, yto, xfrom, yfrom, x_size, y_size);
+    return;
+  }
+
+  int xmin, ymin, xmax, ymax;
+  setup_sub_image(copy, xto, yto, xfrom, yfrom, x_size, y_size,
+                  xmin, ymin, xmax, ymax);
+
+  int x, y;
+  if (copy.has_alpha()) {
+    for (y = ymin; y < ymax; y++) {
+      for (x = xmin; x < xmax; x++) {
+        over(x, y, copy.get_xel(x - xmin + xfrom, y - ymin + yfrom),
+              copy.get_alpha(x - xmin + xfrom, y - ymin + yfrom) * pixel_scale);
+      }
+    }
+  } else {
+    for (y = ymin; y < ymax; y++) {
+      for (x = xmin; x < xmax; x++) {
+        over(x, y, copy.get_xel(x - xmin + xfrom, y - ymin + yfrom),
               pixel_scale);
       }
     }
