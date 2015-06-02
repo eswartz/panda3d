@@ -41,6 +41,7 @@ protected:
 
   PT(Geom) make_geom(Rocket::Core::Vertex* vertices, int num_vertices, int* indices, int num_indices, GeomEnums::UsageHint uh);
   void render_geom(const Geom* geom, const RenderState* state, const Rocket::Core::Vector2f& translation);
+  void fix_texture_size(Texture* tex);
 
   void RenderGeometry(Rocket::Core::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rocket::Core::TextureHandle texture, const Rocket::Core::Vector2f& translation);
   Rocket::Core::CompiledGeometryHandle CompileGeometry(Rocket::Core::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rocket::Core::TextureHandle texture);
@@ -70,6 +71,7 @@ private:
   CPT(TransformState) _net_transform;
   CPT(RenderState) _net_state;
   Rocket::Core::Vector2i _dimensions;
+
 };
 
 #endif

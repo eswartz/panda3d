@@ -61,6 +61,27 @@ render(Rocket::Core::Context* context, CullTraverser *trav) {
 }
 
 ////////////////////////////////////////////////////////////////////
+//     Function: RocketRenderInterface::fix_texture_size
+//       Access: Protected
+//  Description: Called internally to ensure a texture loaded or generated
+//               on behalf of Rocket has power-of-two texture sizes
+//               as requested by the textures-power-2 config var.
+////////////////////////////////////////////////////////////////////
+void RocketRenderInterface::
+fix_texture_size(Texture* tex) {
+  if (tex != NULL) {
+    // don't un-pad a texture that was already padded
+    if (tex->get_pad_x_size() == 0 && tex->get_pad_y_size() == 0) {
+      cerr <<"current size: "<<tex->get_x_size() <<"," << tex->get_y_size() <<
+          " with padding: "<<tex->get_pad_x_size() <<"," << tex->get_pad_y_size() << endl;
+      tex->set_size_padded(tex->get_x_size(), tex->get_y_size(), tex->get_z_size());
+      cerr <<"padded to size: "<<tex->get_x_size() <<"," << tex->get_y_size() <<
+          " with padding: "<<tex->get_pad_x_size() <<"," << tex->get_pad_y_size() << endl;
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////
 //     Function: RocketRenderInterface::make_geom
 //       Access: Protected
 //  Description: Called internally to make a Geom from Rocket data.
@@ -232,10 +253,14 @@ LoadTexture(Rocket::Core::TextureHandle& texture_handle,
 
   tex->set_minfilter(SamplerState::FT_nearest);
   tex->set_magfilter(SamplerState::FT_nearest);
-  tex->rescale_texture();
 
+  // remember the actual size...
   texture_dimensions.x = tex->get_x_size();
   texture_dimensions.y = tex->get_y_size();
+
+  // but pad up to power-of-two
+  fix_texture_size(tex);
+
   tex->ref();
   texture_handle = (Rocket::Core::TextureHandle) tex.p();
 
@@ -276,7 +301,8 @@ GenerateTexture(Rocket::Core::TextureHandle& texture_handle,
   tex->set_wrap_v(SamplerState::WM_clamp);
   tex->set_minfilter(SamplerState::FT_nearest);
   tex->set_magfilter(SamplerState::FT_nearest);
-  tex->rescale_texture();
+
+  fix_texture_size(tex);
 
   tex->ref();
   texture_handle = (Rocket::Core::TextureHandle) tex.p();
@@ -322,3 +348,4 @@ SetScissorRegion(int x, int y, int width, int height) {
   _scissor[2] = 1.0f - ((y + height) / (PN_stdfloat) _dimensions.y);
   _scissor[3] = 1.0f - (y / (PN_stdfloat) _dimensions.y);
 }
+
