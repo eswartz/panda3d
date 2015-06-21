@@ -117,8 +117,8 @@ private:
   bool apply_texture(TextureContext *tc);
   bool upload_texture(TinyTextureContext *gtc, bool force, bool uses_mipmaps);
   bool upload_simple_texture(TinyTextureContext *gtc);
-  bool setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels);
-  int get_tex_shift(int orig_size);
+  bool setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels, bool allow_non_pot = false);
+  int get_tex_shift(int orig_size, bool allow_non_pot = false);
 
   static void copy_lum_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int level);
   static void copy_alpha_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int level);

@@ -1401,16 +1401,21 @@ framebuffer_copy_to_texture(Texture *tex, int view, int z,
   nassertr(tex != NULL && dr != NULL, false);
 
   int xo, yo, w, h;
-  dr->get_region_pixels_i(xo, yo, w, h);
+  dr->get_region_pixels(xo, yo, w, h);
 
-  tex->setup_2d_texture(w, h, Texture::T_unsigned_byte, Texture::F_rgba);
+  // ensure texture is power-of-two sized
+  tex->set_size_padded(w, h, tex->get_z_size());
+  int width = tex->get_x_size();
+  int height = tex->get_y_size();
+
+  tex->setup_2d_texture(width, height, Texture::T_unsigned_byte, Texture::F_rgba);
 
   TextureContext *tc = tex->prepare_now(view, get_prepared_objects(), this);
   nassertr(tc != (TextureContext *)NULL, false);
   TinyTextureContext *gtc = DCAST(TinyTextureContext, tc);
 
   GLTexture *gltex = &gtc->_gltex;
-  if (!setup_gltex(gltex, tex->get_x_size(), tex->get_y_size(), 1)) {
+  if (!setup_gltex(gltex, width, height, 1)) {
     return false;
   }
   LColor border_color = tex->get_border_color();
@@ -1421,10 +1426,21 @@ framebuffer_copy_to_texture(Texture *tex, int view, int z,
 
   PIXEL *ip = gltex->levels[0].pixmap + gltex->xsize * gltex->ysize;
   PIXEL *fo = _c->zb->pbuf + xo + yo * _c->zb->linesize / PSZB;
-  for (int y = 0; y < gltex->ysize; ++y) {
-    ip -= gltex->xsize;
-    memcpy(ip, fo, gltex->xsize * PSZB);
+  int pad_x = width - w;
+  for (int y = 0; y < h; ++y) {
+    // clear any pad pixels
+    ip -= pad_x;
+    memset(ip, 0, pad_x * PSZB);
+
+    ip -= w;
+    memcpy(ip, fo, w * PSZB);
     fo += _c->zb->linesize / PSZB;
+  }
+
+  // clear any pad lines
+  for (int y = height - h; y > 0; --y) {
+    ip -= gltex->xsize;
+    memset(ip, 0, gltex->xsize * PSZB);
   }
 
   gtc->update_data_size_bytes(gltex->xsize * gltex->ysize * 4);
@@ -2703,9 +2719,9 @@ upload_simple_texture(TinyTextureContext *gtc) {
 //               the texture is a valid size, false otherwise.
 ////////////////////////////////////////////////////////////////////
 bool TinyGraphicsStateGuardian::
-setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels) {
-  int s_bits = get_tex_shift(x_size);
-  int t_bits = get_tex_shift(y_size);
+setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels, bool allow_non_pot) {
+  int s_bits = get_tex_shift(x_size, allow_non_pot);
+  int t_bits = get_tex_shift(y_size, allow_non_pot);
 
   if (s_bits < 0 || t_bits < 0) {
     tinydisplay_cat.error()
@@ -2797,8 +2813,10 @@ setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels) {
 //               or is larger than our largest allowable size.
 ////////////////////////////////////////////////////////////////////
 int TinyGraphicsStateGuardian::
-get_tex_shift(int orig_size) {
-  if ((orig_size & (orig_size - 1)) != 0) {
+get_tex_shift(int orig_size, bool allow_non_pot) {
+  if (allow_non_pot) {
+    orig_size = Texture::up_to_power_2(orig_size);
+  } else if ((orig_size & (orig_size - 1)) != 0) {
     // Not a power of 2.
     return -1;
   }
