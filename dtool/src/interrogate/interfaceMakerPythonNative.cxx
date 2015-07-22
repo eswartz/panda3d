@@ -1813,7 +1813,7 @@ write_module_class(ostream &out, Object *obj) {
           out << "  if (res != NULL) {\n";
           out << "    return res;\n";
           out << "  }\n";
-          out << "  if (!PyErr_ExceptionMatches(PyExc_AttributeError)) {\n";
+          out << "  if (_PyErr_OCCURRED() != PyExc_AttributeError) {\n";
           out << "    return NULL;\n";
           out << "  }\n";
           out << "  PyErr_Clear();\n\n";
@@ -4774,10 +4774,9 @@ write_function_instance(ostream &out, FunctionRemap *remap,
 
     } else if (TypeManager::is_unsigned_short(type)) {
       if (args_type == AT_single_arg) {
-        // This is defined to PyLong_Check for Python 3 by py_panda.h.
-        type_check = "PyInt_Check(arg)";
+        type_check = "PyLongOrInt_Check(arg)";
         extra_convert
-          << "long " << param_name << " = PyInt_AS_LONG(arg);\n";
+          << "long " << param_name << " = PyLongOrInt_AS_LONG(arg);\n";
 
         pexpr_string = "(" + type->get_local_name(&parser) + ")" + param_name;
       } else {
@@ -4804,12 +4803,11 @@ write_function_instance(ostream &out, FunctionRemap *remap,
 
     } else if (TypeManager::is_short(type)) {
       if (args_type == AT_single_arg) {
-        // This is defined to PyLong_Check for Python 3 by py_panda.h.
-        type_check = "PyInt_Check(arg)";
+        type_check = "PyLongOrInt_Check(arg)";
 
         // Perform overflow checking in debug builds.
         extra_convert
-          << "long arg_val = PyInt_AS_LONG(arg);\n"
+          << "long arg_val = PyLongOrInt_AS_LONG(arg);\n"
           << "#ifndef NDEBUG\n"
           << "if (arg_val < SHRT_MIN || arg_val > SHRT_MAX) {\n";
 
@@ -4867,14 +4865,13 @@ write_function_instance(ostream &out, FunctionRemap *remap,
 
     } else if (TypeManager::is_integer(type)) {
       if (args_type == AT_single_arg) {
-        // This is defined to PyLong_Check for Python 3 by py_panda.h.
-        type_check = "PyInt_Check(arg)";
+        type_check = "PyLongOrInt_Check(arg)";
 
         // Perform overflow checking in debug builds.  Note that Python 2
         // stores longs internally, for ints, so we don't do it on Windows,
         // where longs are the same size as ints.
         extra_convert
-          << "long arg_val = PyInt_AS_LONG(arg);\n"
+          << "long arg_val = PyLongOrInt_AS_LONG(arg);\n"
           << "#if (SIZEOF_LONG > SIZEOF_INT) && !defined(NDEBUG)\n"
           << "if (arg_val < INT_MIN || arg_val > INT_MAX) {\n";
 
@@ -5561,6 +5558,11 @@ write_function_instance(ostream &out, FunctionRemap *remap,
         << "return Dtool_Return_Bool(" << return_expr << ");\n";
       return_flags &= ~RF_pyobject;
 
+    } else if (return_null && TypeManager::is_pointer_to_PyObject(remap->_return_type->get_new_type())) {
+      indent(out, indent_level)
+        << "return Dtool_Return(" << return_expr << ");\n";
+      return_flags &= ~RF_pyobject;
+
     } else {
       indent(out, indent_level)
         << "if (Dtool_CheckErrorOccurred()) {\n";
@@ -5661,7 +5663,7 @@ write_function_instance(ostream &out, FunctionRemap *remap,
         << "return DTool_PyInit_Finalize(self, " << return_expr << ", &" << CLASS_PREFIX << make_safe_name(itype.get_scoped_name()) << ", true, false);\n";
 
     } else if (TypeManager::is_integer(orig_type)) {
-      if (return_flags & RF_compare) {
+      if ((return_flags & RF_compare) == RF_compare) {
         // Make sure it returns -1, 0, or 1, or Python complains with:
         // RuntimeWarning: tp_compare didn't return -1, 0 or 1
         indent(out, indent_level) << "return (int)(" << return_expr << " > 0) - (int)(" << return_expr << " < 0);\n";
@@ -6108,7 +6110,7 @@ write_make_seq(ostream &out, Object *obj, const std::string &ClassName,
       << "    return NULL;\n"
       << "  }\n"
       << "\n"
-      << "  PyObject *getter = PyObject_GetAttrString(self, \"" << element_name << "\");\n"
+      << "  PyObject *getter = PyDict_GetItemString(Dtool_" << ClassName << "._PyType.tp_dict, \"" << element_name << "\");\n"
       << "  if (getter == (PyObject *)NULL) {\n"
       << "    return NULL;\n"
       << "  }\n"
@@ -6122,7 +6124,7 @@ write_make_seq(ostream &out, Object *obj, const std::string &ClassName,
       << "#else\n"
       << "    PyObject *index = PyInt_FromSsize_t(i);\n"
       << "#endif\n"
-      << "    PyObject *value = PyObject_CallFunctionObjArgs(getter, index, NULL);\n"
+      << "    PyObject *value = PyObject_CallFunctionObjArgs(getter, self, index, NULL);\n"
       << "    PyTuple_SET_ITEM(tuple, i, value);\n"
       << "    Py_DECREF(index);\n"
       << "  }\n"

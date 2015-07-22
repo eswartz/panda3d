@@ -114,6 +114,7 @@ inline PyObject* doPy_RETURN_FALSE()
 #define PyLongOrInt_FromSize_t PyLong_FromSize_t
 #define PyLongOrInt_FromLong PyLong_FromLong
 #define PyLongOrInt_FromUnsignedLong PyLong_FromUnsignedLong
+#define PyLongOrInt_AS_LONG PyLong_AS_LONG
 #define PyInt_Check PyLong_Check
 #define PyInt_AsLong PyLong_AsLong
 #define PyInt_AS_LONG PyLong_AS_LONG
@@ -122,6 +123,7 @@ inline PyObject* doPy_RETURN_FALSE()
 // PyInt_FromSize_t automatically picks the right type.
 #define PyLongOrInt_FromSize_t PyInt_FromSize_t
 #define PyLongOrInt_FromLong PyInt_FromLong
+#define PyLongOrInt_AS_LONG PyInt_AsLong
 
 // For more portably defining hash functions.
 typedef long Py_hash_t;
@@ -340,6 +342,7 @@ EXPCL_DTOOLCONFIG bool Dtool_CheckErrorOccurred();
 EXPCL_DTOOLCONFIG PyObject *Dtool_Raise_AssertionError();
 EXPCL_DTOOLCONFIG PyObject *Dtool_Raise_TypeError(const char *message);
 EXPCL_DTOOLCONFIG PyObject *Dtool_Raise_ArgTypeError(PyObject *obj, int param, const char *function_name, const char *type_name);
+EXPCL_DTOOLCONFIG PyObject *Dtool_Raise_AttributeError(PyObject *obj, const char *attribute);
 
 EXPCL_DTOOLCONFIG PyObject *_Dtool_Raise_BadArgumentsError();
 #ifdef NDEBUG
@@ -352,11 +355,14 @@ EXPCL_DTOOLCONFIG PyObject *_Dtool_Raise_BadArgumentsError();
 
 EXPCL_DTOOLCONFIG PyObject *_Dtool_Return_None();
 EXPCL_DTOOLCONFIG PyObject *Dtool_Return_Bool(bool value);
+EXPCL_DTOOLCONFIG PyObject *_Dtool_Return(PyObject *value);
 
 #ifdef NDEBUG
 #define Dtool_Return_None() (_PyErr_OCCURRED() != NULL ? NULL : (Py_INCREF(Py_None), Py_None))
+#define Dtool_Return(value) (_PyErr_OCCURRED() != NULL ? NULL : value)
 #else
 #define Dtool_Return_None() _Dtool_Return_None()
+#define Dtool_Return(value) _Dtool_Return(value)
 #endif
 
 ////////////////////////////////////////////////////////////////////////

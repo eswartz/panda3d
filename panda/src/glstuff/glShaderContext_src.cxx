@@ -212,10 +212,11 @@ CLP(ShaderContext)(CLP(GraphicsStateGuardian) *glgsg, Shader *s) : ShaderContext
   if (_glsl_parameter_map.size() == 0) {
     int seqno = 0, texunitno = 0, imgunitno = 0;
     string noprefix;
-    GLint param_count, param_maxlength, param_size;
+    GLint param_count = 0, param_maxlength = 0, param_size;
     GLenum param_type;
     _glgsg->_glGetProgramiv(_glsl_program, GL_ACTIVE_UNIFORMS, &param_count);
     _glgsg->_glGetProgramiv(_glsl_program, GL_ACTIVE_UNIFORM_MAX_LENGTH, &param_maxlength);
+    param_maxlength = max(64, param_maxlength);
     char* param_name_cstr = (char *)alloca(param_maxlength);
 
     for (int i = 0; i < param_count; ++i) {
@@ -856,6 +857,7 @@ CLP(ShaderContext)(CLP(GraphicsStateGuardian) *glgsg, Shader *s) : ShaderContext
     // Now we've processed the uniforms, we'll process the attribs.
     _glgsg->_glGetProgramiv(_glsl_program, GL_ACTIVE_ATTRIBUTES, &param_count);
     _glgsg->_glGetProgramiv(_glsl_program, GL_ACTIVE_ATTRIBUTE_MAX_LENGTH, &param_maxlength);
+    param_maxlength = max(64, param_maxlength);
     param_name_cstr = (char *)alloca(param_maxlength);
 
     for (int i = 0; i < param_count; ++i) {
@@ -1186,6 +1188,7 @@ issue_parameters(int altered) {
       }
 
       GLint p = _glsl_parameter_map[spec._id._seqno];
+      int array_size = min(spec._dim[0], (int)ptr_data->_size / spec._dim[1]);
       switch (spec._type) {
       case Shader::SPT_float:
         {
@@ -1194,16 +1197,16 @@ issue_parameters(int altered) {
           switch (ptr_data->_type) {
           case Shader::SPT_int:
             // Convert int data to float data.
-            data = (float*) alloca(sizeof(float) * spec._dim[0] * spec._dim[1]);
-            for (int i = 0; i < (spec._dim[0] * spec._dim[1]); ++i) {
+            data = (float*) alloca(sizeof(float) * array_size * spec._dim[1]);
+            for (int i = 0; i < (array_size * spec._dim[1]); ++i) {
               data[i] = (float)(((int*)ptr_data->_ptr)[i]);
             }
             break;
 
           case Shader::SPT_double:
             // Downgrade double data to float data.
-            data = (float*) alloca(sizeof(float) * spec._dim[0] * spec._dim[1]);
-            for (int i = 0; i < (spec._dim[0] * spec._dim[1]); ++i) {
+            data = (float*) alloca(sizeof(float) * array_size * spec._dim[1]);
+            for (int i = 0; i < (array_size * spec._dim[1]); ++i) {
               data[i] = (float)(((double*)ptr_data->_ptr)[i]);
             }
             break;
@@ -1217,12 +1220,12 @@ issue_parameters(int altered) {
           }
 
           switch (spec._dim[1]) {
-          case 1: _glgsg->_glUniform1fv(p, spec._dim[0], (float*)data); continue;
-          case 2: _glgsg->_glUniform2fv(p, spec._dim[0], (float*)data); continue;
-          case 3: _glgsg->_glUniform3fv(p, spec._dim[0], (float*)data); continue;
-          case 4: _glgsg->_glUniform4fv(p, spec._dim[0], (float*)data); continue;
-          case 9: _glgsg->_glUniformMatrix3fv(p, spec._dim[0], GL_FALSE, (float*)data); continue;
-          case 16: _glgsg->_glUniformMatrix4fv(p, spec._dim[0], GL_FALSE, (float*)data); continue;
+          case 1: _glgsg->_glUniform1fv(p, array_size, (float*)data); continue;
+          case 2: _glgsg->_glUniform2fv(p, array_size, (float*)data); continue;
+          case 3: _glgsg->_glUniform3fv(p, array_size, (float*)data); continue;
+          case 4: _glgsg->_glUniform4fv(p, array_size, (float*)data); continue;
+          case 9: _glgsg->_glUniformMatrix3fv(p, array_size, GL_FALSE, (float*)data); continue;
+          case 16: _glgsg->_glUniformMatrix4fv(p, array_size, GL_FALSE, (float*)data); continue;
           }
           nassertd(false) continue;
         }
@@ -1239,10 +1242,10 @@ issue_parameters(int altered) {
 
         } else {
           switch (spec._dim[1]) {
-          case 1: _glgsg->_glUniform1iv(p, spec._dim[0], (int*)ptr_data->_ptr); continue;
-          case 2: _glgsg->_glUniform2iv(p, spec._dim[0], (int*)ptr_data->_ptr); continue;
-          case 3: _glgsg->_glUniform3iv(p, spec._dim[0], (int*)ptr_data->_ptr); continue;
-          case 4: _glgsg->_glUniform4iv(p, spec._dim[0], (int*)ptr_data->_ptr); continue;
+          case 1: _glgsg->_glUniform1iv(p, array_size, (int*)ptr_data->_ptr); continue;
+          case 2: _glgsg->_glUniform2iv(p, array_size, (int*)ptr_data->_ptr); continue;
+          case 3: _glgsg->_glUniform3iv(p, array_size, (int*)ptr_data->_ptr); continue;
+          case 4: _glgsg->_glUniform4iv(p, array_size, (int*)ptr_data->_ptr); continue;
           }
           nassertd(false) continue;
         }
@@ -1939,13 +1942,13 @@ glsl_compile_and_link() {
   if (!_shader->get_text(Shader::ST_geometry).empty()) {
     valid &= glsl_compile_shader(Shader::ST_geometry);
 
-    // Set the vertex output limit to the maximum.
-    // This is slow, but it is probably reasonable to require
-    // the user to override this in his shader using layout().
-    nassertr(_glgsg->_glProgramParameteri != NULL, false);
-    GLint max_vertices;
-    glGetIntegerv(GL_MAX_GEOMETRY_OUTPUT_VERTICES, &max_vertices);
-    _glgsg->_glProgramParameteri(_glsl_program, GL_GEOMETRY_VERTICES_OUT_ARB, max_vertices);
+    //XXX Actually, it turns out that this is unavailable in the core
+    // version of geometry shaders.  Probably no need to bother with it.
+
+    //nassertr(_glgsg->_glProgramParameteri != NULL, false);
+    //GLint max_vertices;
+    //glGetIntegerv(GL_MAX_GEOMETRY_OUTPUT_VERTICES, &max_vertices);
+    //_glgsg->_glProgramParameteri(_glsl_program, GL_GEOMETRY_VERTICES_OUT_ARB, max_vertices);
   }
 #endif
 
