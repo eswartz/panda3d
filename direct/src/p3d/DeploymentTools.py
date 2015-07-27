@@ -73,7 +73,7 @@ class Standalone:
 
         self.tempDir = Filename.temporary("", self.basename, "") + "/"
         self.tempDir.makeDir()
-        self.host = HostInfo(PandaSystem.getPackageHostUrl(), appRunner = appRunner, hostDir = self.tempDir, asMirror = False)
+        self.host = HostInfo(PandaSystem.getPackageHostUrl(), appRunner = appRunner, hostDir = self.tempDir, asMirror = False, perPlatform = True)
 
         self.http = HTTPClient.getGlobalPtr()
         if not self.host.hasContentsFile:
