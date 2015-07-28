@@ -1899,21 +1899,29 @@ def SdkLocatePython(prefer_thirdparty_python=False):
         SDK["PYTHON"] = tp_python + "/include/" + SDK["PYTHONVERSION"]
 
     elif GetTarget() == 'darwin':
-         # On Mac OS X, use the system Python framework.
-         py_fwx = SDK.get("MACOSX", "") + "/System/Library/Frameworks/Python.framework/Versions/Current"
+        ppfx = SDK.get("MACOSX", "")
+        # favor System version over others
+        for root in [ "/System", "", "/Developer", "/Users/%s/System" % getpass.getuser() ]:
+            fw = ppfx + root + "/Library/Frameworks/Python.framework"
+            if os.path.isdir(fw):
+                py_fwx = fw + "/Versions/Current"
 
-         if not os.path.islink(py_fwx):
-             exit("Could not locate Python installation at %s" % (py_fwx))
+                if not os.path.islink(py_fwx):
+                    exit("Could not locate Python installation at %s" % (py_fwx))
 
-         ver = os.path.basename(os.readlink(py_fwx))
-         py_fwx = SDK.get("MACOSX", "") + "/System/Library/Frameworks/Python.framework/Versions/%s" % ver
+                ver = os.path.basename(os.readlink(py_fwx))
+                py_fwx = fw + "/Versions/%s" % ver
 
-         SDK["PYTHON"] = py_fwx + "/Headers"
-         SDK["PYTHONVERSION"] = "python" + ver
-         SDK["PYTHONEXEC"] = "/System/Library/Frameworks/Python.framework/Versions/" + ver + "/bin/python" + ver
+                SDK["PYTHON"] = py_fwx + "/Headers"
+                SDK["PYTHONVERSION"] = "python" + ver
+                SDK["PYTHONEXEC"] = fw + "/Versions/" + ver + "/bin/python" + ver
 
-         if sys.version[:3] != ver:
-             print("Warning: building with Python %s instead of %s since you targeted a specific Mac OS X version." % (ver, sys.version[:3]))
+                if sys.version[:3] != ver:
+                    print("Warning: building with Python %s instead of %s since you targeted a specific Mac OS X version." % (ver, sys.version[:3]))
+
+                break
+        else:
+            exit("Could not locate Python installation")
 
     #elif GetTarget() == 'windows':
     #    SDK["PYTHON"] = os.path.dirname(sysconfig.get_python_inc())
