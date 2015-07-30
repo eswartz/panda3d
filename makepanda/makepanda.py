@@ -1862,9 +1862,6 @@ def Package(target, inputs, opts):
         command += ' -a "' + P3DSUFFIX + '"'
     command += " " + inputs[0]
 
-    for key, value in os.environ.items():
-       print "export " + key + "=\"" + value +"\""
-
     oscmd(command)
 
 ##########################################################################################
