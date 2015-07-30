@@ -9,7 +9,7 @@
 ##
 ########################################################################
 
-import sys,os,time,stat,string,re,getopt,fnmatch,threading,signal,shutil,platform,glob,getpass,signal
+import sys,os,time,stat,string,re,getopt,fnmatch,threading,signal,shutil,platform,glob,getpass,signal,re
 import subprocess
 from distutils import sysconfig
 
@@ -290,6 +290,13 @@ def GetHostArch():
     target = GetTarget()
     if target == 'windows':
         return 'x64' if host_64 else 'x86'
+    elif target == 'linux':
+        if platform.machine() in ['i386', 'i486', 'i586', 'i686']:
+            return 'x86'
+        elif platform.machine() in ['x86_64', 'amd64']:
+            return 'x64'
+        else:
+            return platform.machine()
     else: #TODO
         return platform.machine()
 
@@ -353,7 +360,9 @@ def SetTarget(target, arch=None):
 
     elif target == 'linux':
         if arch is not None:
-            TOOLCHAIN_PREFIX = '%s-linux-gnu-' % arch
+            if (target != host or arch != host_arch):
+                gcc_arch = arch == 'x86' and 'i686' or arch == 'x64' and 'x86_64' or arch
+                TOOLCHAIN_PREFIX = '%s-linux-gnu-' % gcc_arch
 
         elif host != 'linux':
             exit('Should specify an architecture when building for Linux')

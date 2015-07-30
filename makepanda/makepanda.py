@@ -393,6 +393,8 @@ elif (DISTRIBUTOR == ""):
 if not IsCustomOutputDir():
     if GetTarget() == "windows" and GetTargetArch() == 'x64':
         outputdir_suffix += '_x64'
+    elif HasTargetArch():
+        outputdir_suffix += '_' + GetTargetArch()
 
     SetOutputDir("built" + outputdir_suffix)
 
@@ -1583,6 +1585,11 @@ def CompileLink(dll, obj, opts):
 
     if COMPILER == "GCC":
         cxx = GetCXX()
+	if HasTargetArch():
+		if GetTargetArch() == 'x86':
+			cxx += ' -m32'
+		elif GetTargetArch() == 'x64':
+			cxx += ' -m64'
         if GetOrigExt(dll) == ".exe" and GetTarget() != 'android':
             cmd = cxx + ' -o ' + dll + ' -L' + GetOutputDir() + '/lib -L' + GetOutputDir() + '/tmp'
         else:
@@ -1854,6 +1861,10 @@ def Package(target, inputs, opts):
     if (P3DSUFFIX):
         command += ' -a "' + P3DSUFFIX + '"'
     command += " " + inputs[0]
+
+    for key, value in os.environ.items():
+       print "export " + key + "=\"" + value +"\""
+
     oscmd(command)
 
 ##########################################################################################
