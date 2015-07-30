@@ -5087,7 +5087,8 @@ if (RTDIST):
   TargetAdd('p3dembed.exe', input='plugin_standalone_panda3dBase.obj')
   TargetAdd('p3dembed.exe', input='plugin_standalone_p3dEmbedMain.obj')
   TargetAdd('p3dembed.exe', input='plugin_standalone_p3dEmbed.obj')
-  #TargetAdd('p3dembed.exe', input='plugin_standalone_pystub.obj')
+  if (GetTarget() != 'windows'):
+      TargetAdd('p3dembed.exe', input='plugin_standalone_pystub.obj')
   TargetAdd('p3dembed.exe', input='plugin_standalone_dtoolbase_composite1.obj')
   TargetAdd('p3dembed.exe', input='plugin_standalone_dtoolbase_composite2.obj')
   TargetAdd('p3dembed.exe', input='plugin_standalone_lookup3.obj')
@@ -5118,7 +5119,8 @@ if (RTDIST):
     TargetAdd('p3dembedw.exe', input='plugin_standalone_panda3dBase.obj')
     TargetAdd('p3dembedw.exe', input='plugin_standalone_p3dEmbedWinMain.obj')
     TargetAdd('p3dembedw.exe', input='plugin_standalone_p3dEmbed.obj')
-    #TargetAdd('p3dembedw.exe', input='plugin_standalone_pystub.obj')
+    if (GetTarget() != 'windows'):
+      TargetAdd('p3dembedw.exe', input='plugin_standalone_pystub.obj')
     TargetAdd('p3dembedw.exe', input='plugin_standalone_dtoolbase_composite1.obj')
     TargetAdd('p3dembedw.exe', input='plugin_standalone_dtoolbase_composite2.obj')
     TargetAdd('p3dembedw.exe', input='plugin_standalone_lookup3.obj')
