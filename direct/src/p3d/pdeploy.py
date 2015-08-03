@@ -14,7 +14,7 @@ be passed on the command-line.
 
 Usage:
 
-  %(prog)s [opts] app.p3d standalone|installer|html
+  %(prog)s [-@ file] [opts] app.p3d standalone|installer|html
 
 Modes:
 
@@ -34,6 +34,11 @@ Modes:
     the provided p3d file in a browser.
 
 Options:
+
+  -@ file
+     Insert command-line arguments from a text file, one per line.  
+     This can help with passing quoted arguments below without shell 
+     escaping frustration.
 
   -n your_app
      Short, lowercase name of the application or game. May only
@@ -171,8 +176,31 @@ iconFiles = []
 includeRequires = False
 omitDefaultCheckboxes = False
 
+origargs = sys.argv[1:]
+
 try:
-    opts, args = getopt.getopt(sys.argv[1:], 'n:N:v:o:t:P:csOl:L:a:A:e:i:h')
+    idx = origargs.index('-@')
+    
+    import os
+    
+    # Panda's file wrappers fail here...
+    f = os.open(origargs[idx+1], 0)
+    if not f:
+        usage(1, 'Could not open ' + origargs[idx+1])
+        
+    rawlines = os.read(f, 65536).split('\n')
+    fileArgs = [x.strip() for x in rawlines if x and x[0] != '#']
+    
+    os.close(f)
+    
+    origargs = origargs[0:idx] + fileArgs + origargs[idx+2:]
+    print "==>","\n".join(origargs)
+    
+except ValueError:
+    pass
+
+try:
+    opts, args = getopt.getopt(origargs, 'n:N:v:o:t:P:csOl:L:a:A:e:i:h@:')
 except getopt.error, msg:
     usage(1, msg or 'Invalid option')
 
@@ -208,11 +236,11 @@ for opt, arg in opts:
         authoremail = arg.strip()
     elif opt == '-i':
         iconFiles.append(Filename.fromOsSpecific(arg))
-
+    
     elif opt == '-h':
         usage(0)
     else:
-        msg = 'illegal option: ' + flag
+        msg = 'illegal option: ' + opt
         print msg
         sys.exit(1, msg)
 
