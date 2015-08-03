@@ -755,7 +755,6 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
     if (needs_color) {
       const LColor &d = rcolor.get_data4();
       const LColor &s = _current_color_scale;
-      cerr << "current_color = " << d << "*" << s << endl;
 
       _c->current_color.v[0] = d[0] * s[0];
       _c->current_color.v[1] = d[1] * s[1];
