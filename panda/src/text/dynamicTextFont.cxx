@@ -125,7 +125,12 @@ DynamicTextFont(const DynamicTextFont &copy) :
   _has_outline(copy._has_outline),
   _tex_format(copy._tex_format),
   _needs_image_processing(copy._needs_image_processing),
-  _preferred_page(0)
+  _preferred_page(0),
+  _pages(copy._pages),
+  _cache(copy._cache),
+  _empty_glyphs(copy._empty_glyphs),
+  _contours(copy._contours),
+  _q(copy._q)
 {
 }
 
