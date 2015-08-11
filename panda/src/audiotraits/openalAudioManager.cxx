@@ -236,7 +236,7 @@ get_device_list() {
     while (*deviceList) {
       string dev = deviceList;
       devList.push_back(dev);
-      audio_cat->debug() << "\t" << dev << endl;
+      audio_cat->debug() << "  " << dev << endl;
       deviceList += strlen(deviceList) + 1;
     }
   }
@@ -257,7 +257,7 @@ get_audio_device() {
     return "";
   }
 
-  std::string device = device_cfg;
+  std::string device = openal_device;
   if (!device.empty()) {
     if (std::find(devList.begin(), devList.end(), device) == devList.end()) {
       audio_cat->warning() << "Requested OpenAL device " << device << " not detected; using default." << endl;
