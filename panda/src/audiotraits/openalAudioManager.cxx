@@ -118,10 +118,11 @@ OpenALAudioManager() {
 
   // Initialization
   if (_active_managers == 0 || !_openal_active) {
-    _device = alcOpenDevice(get_audio_device().c_str()); // select the "preferred device"
+    string dev_name = get_audio_device();
+    _device = alcOpenDevice(dev_name.c_str()); // select the user or preferred device
     if (!_device) {
       // this is a unique kind of error
-      audio_error("OpenALAudioManager: alcOpenDevice(NULL): ALC couldn't open device");
+      audio_cat->error() << "OpenALAudioManager: alcOpenDevice(\"" << dev_name << "\"): ALC couldn't open device" << endl;
     } else {
       alcGetError(_device); // clear errors
       _context = alcCreateContext(_device, NULL);
