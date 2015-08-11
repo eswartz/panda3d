@@ -29,8 +29,8 @@ ConfigureFn(config_openalAudio) {
 
 ConfigVariableString device_cfg
 ("openal-device", "",
- PRC_DESC("Specify the OpenAL device string for playback and recording.  If this "
-          "is not specified, the OpenAL system default is used."));
+ PRC_DESC("Specify the OpenAL device string for audio playback (no quotes).  If this "
+          "is not specified, the OpenAL default device is used."));
 
 
 ////////////////////////////////////////////////////////////////////
