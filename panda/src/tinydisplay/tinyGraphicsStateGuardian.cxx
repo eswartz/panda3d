@@ -627,7 +627,6 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
   int max_stage_index = _target_texture->get_num_on_ff_stages();
   for (int si = 0; si < max_stage_index; ++si) {
     TextureStage *stage = _target_texture->get_on_ff_stage(si);
-
     switch (target_tex_gen->get_mode(stage)) {
     case TexGenAttrib::M_eye_sphere_map:
       tcdata[si]._r1 = GeomVertexReader(data_reader, InternalName::get_normal(),
@@ -756,6 +755,7 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
     if (needs_color) {
       const LColor &d = rcolor.get_data4();
       const LColor &s = _current_color_scale;
+
       _c->current_color.v[0] = d[0] * s[0];
       _c->current_color.v[1] = d[1] * s[1];
       _c->current_color.v[2] = d[2] * s[2];
@@ -823,7 +823,6 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
     // Implement a color mask.
     int op_a = get_color_blend_op(ColorBlendAttrib::O_one);
     int op_b = get_color_blend_op(ColorBlendAttrib::O_zero);
-
     if (srgb_blend) {
       _c->zb->store_pix_func = store_pixel_funcs_sRGB[op_a][op_b][color_channels];
     } else {
@@ -958,6 +957,15 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
     }
   }
 
+  if (false) cerr << "fill_tri:"
+      << " depth_write_state=" << depth_write_state
+      << " color_write_state=" << color_write_state
+      << " alpha_test_state=" << alpha_test_state
+      << " depth_test_state=" << depth_test_state
+      << " texfilter_state=" << texfilter_state
+      << " shade_model_state=" << shade_model_state
+      << " texturing_state=" << texturing_state
+      << endl;
   _c->zb_fill_tri = fill_tri_funcs[depth_write_state][color_write_state][alpha_test_state][depth_test_state][texfilter_state][shade_model_state][texturing_state];
 
 #ifdef DO_PSTATS

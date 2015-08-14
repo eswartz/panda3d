@@ -16,6 +16,7 @@ import getpass
 import platform
 import struct
 import subprocess
+import copy
 from direct.p3d.FileSpec import FileSpec
 from direct.p3d.SeqValue import SeqValue
 from direct.showbase import Loader
@@ -372,6 +373,9 @@ class Packager:
             self.requiredFilenames = []
             self.requiredModules = []
 
+            # A list of required packages that were missing.
+            self.missingPackages = []
+
             # This records the current list of modules we have added so
             # far.
             self.freezer = FreezeTool.Freezer(platform = self.packager.platform)
@@ -494,6 +498,12 @@ class Packager:
             """ Installs the package, either as a p3d application, or
             as a true package.  Either is implemented with a
             Multifile. """
+
+            if self.missingPackages:
+                missing = ', '.join([name for name, version in self.missingPackages])
+                self.notify.warning("Cannot build package %s due to missing dependencies: %s" % (self.packageName, missing))
+                self.cleanup()
+                return False
 
             self.multifile = Multifile()
 
@@ -829,6 +839,14 @@ class Packager:
 
             self.packager.contents[pe.getKey()] = pe
             self.packager.contentsChanged = True
+
+            # Hack for coreapi package, to preserve backward compatibility
+            # with old versions of the runtime, which still called the
+            # 32-bit Windows platform "win32".
+            if self.packageName == "coreapi" and self.platform == "win_i386":
+                pe2 = copy.copy(pe)
+                pe2.platform = "win32"
+                self.packager.contents[pe2.getKey()] = pe2
 
             self.cleanup()
             return True
@@ -1823,7 +1841,10 @@ class Packager:
                         self.notify.warning(message)
                     return
 
-            self.freezer.addModule(moduleName, filename = file.filename)
+            if file.text:
+                self.freezer.addModule(moduleName, filename = file.filename, text = file.text)
+            else:
+                self.freezer.addModule(moduleName, filename = file.filename)
 
         def addEggFile(self, file):
             # Precompile egg files to bam's.
@@ -3008,10 +3029,10 @@ class Packager:
             # environment.
             return None
 
+        # Make sure we have a fresh version of the contents file.
         host = appRunner.getHost(hostUrl)
-        if not host.readContentsFile():
-            if not host.downloadContentsFile(appRunner.http):
-                return None
+        if not host.downloadContentsFile(appRunner.http):
+            return None
 
         packageInfos = []
         packageInfo = host.getPackage(packageName, version, platform = platform)
@@ -3217,7 +3238,9 @@ class Packager:
                                        requires = self.currentPackage.requires)
             if not package:
                 message = 'Unknown package %s, version "%s"' % (packageName, version)
-                raise PackagerError, message
+                self.notify.warning(message)
+                self.currentPackage.missingPackages.append((packageName, pversion))
+                continue
 
             self.requirePackage(package)
 
