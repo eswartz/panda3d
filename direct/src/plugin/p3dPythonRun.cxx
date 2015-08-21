@@ -359,7 +359,7 @@ run_python() {
     }
 
     // We're done.
-    return status;
+    return !status;
   }
 
   // A normal exit from the taskManager.  We're presumably done.
