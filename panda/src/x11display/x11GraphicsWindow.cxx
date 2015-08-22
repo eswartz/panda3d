@@ -103,8 +103,6 @@ x11GraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
 #endif
 
   _awaiting_configure = false;
-  _expected_fixed_size_x = 0;
-  _expected_fixed_size_y = 0;
   _dga_mouse_enabled = false;
   _wm_delete_window = x11_pipe->_wm_delete_window;
 
@@ -448,6 +446,7 @@ process_events() {
         int value_mask = (CWWidth | CWHeight);
         XConfigureWindow(_display, _xwindow, value_mask, &changes);
       }
+      changed_properties = true;
     }
   }
 
