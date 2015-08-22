@@ -359,7 +359,12 @@ run_python() {
     }
 
     // We're done.
+#ifdef _WIN32
+#warning REMOVE THIS HACK -----------------------------------------
+	return !status;
+#else
     return status;
+#endif
   }
 
   // A normal exit from the taskManager.  We're presumably done.
