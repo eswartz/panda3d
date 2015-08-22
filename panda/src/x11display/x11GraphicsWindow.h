@@ -96,10 +96,11 @@ protected:
   SizeID _orig_size_id;
 #endif
 
+  LVecBase2i _fixed_size;
+
   long _event_mask;
   bool _awaiting_configure;
   bool _dga_mouse_enabled;
-  int _expected_fixed_size_x, _expected_fixed_size_y;
   Atom _wm_delete_window;
 
   struct MouseDeviceInfo {
