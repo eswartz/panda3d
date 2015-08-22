@@ -103,6 +103,8 @@ x11GraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
 #endif
 
   _awaiting_configure = false;
+  _expected_fixed_size_x = 0;
+  _expected_fixed_size_y = 0;
   _dga_mouse_enabled = false;
   _wm_delete_window = x11_pipe->_wm_delete_window;
 
@@ -429,22 +431,56 @@ process_events() {
     // inner corner, anyway, but that means we need to fix
     // XConfigureWindow too.)
     properties.set_origin(configure_event.x, configure_event.y);
-    properties.set_size(configure_event.width, configure_event.height);
 
-    if (_properties.get_fixed_size()) {
-      // If the window properties indicate a fixed size only, undo
-      // any attempt by the user to change them.  In X, there
-      // doesn't appear to be a way to universally disallow this
-      // directly (although we do set the min_size and max_size to
-      // the same value, which seems to work for most window
-      // managers.)
-      if (configure_event.width != _fixed_size.get_x() ||
-          configure_event.height != _fixed_size.get_y()) {
+    WindowProperties current_props = get_properties();
+    if (configure_event.width != current_props.get_x_size() ||
+        configure_event.height != current_props.get_y_size()) {
+
+      // The WM may take a few event cycles to honor a resize.
+      // If the window is fixed size, ignore attempts to resize
+      // unless they match the expected size.
+      if (_properties.get_fixed_size() &&
+          (configure_event.width != _expected_fixed_size_x
+            || configure_event.height != _expected_fixed_size_y)) {
+        // If the window properties indicate a fixed size only, undo
+        // any attempt by the user to change them.  In X, there
+        // doesn't appear to be a way to universally disallow this
+        // directly (although we do set the min_size and max_size to
+        // the same value, which seems to work for most window
+        // managers.)  Incidentally, this also works to force my
+        // tiling window manager into 'floating' mode.
+        if (x11display_cat.is_debug()) {
+          x11display_cat.debug()
+            << "overriding attempt to resize fixed_size window to "
+            << configure_event.width << 'x' << configure_event.height << " from "
+            << current_props.get_x_size() << 'x' << current_props.get_y_size() << "\n";
+        }
+
         XWindowChanges changes;
-        changes.width = _fixed_size.get_x();
-        changes.height = _fixed_size.get_y();
+        changes.width = current_props.get_x_size();
+        changes.height = current_props.get_y_size();
         int value_mask = (CWWidth | CWHeight);
         XConfigureWindow(_display, _xwindow, value_mask, &changes);
+
+        // NOTE: this is required to convince
+        // GraphicsWindow::system_changed_size() to do any work.
+        _properties.set_size(0, 0);
+
+        properties.set_size(current_props.get_x_size(), current_props.get_y_size());
+      } else {
+        // A normal window may be resized by the user at will,
+        // or, the WM finally honored the resize request.
+
+        if (x11display_cat.is_debug()) {
+          x11display_cat.debug()
+            << "resizing window to "
+            << configure_event.width << 'x' << configure_event.height << "\n";
+        }
+
+        properties.set_size(configure_event.width, configure_event.height);
+
+        _expected_fixed_size_x = 0;
+        _expected_fixed_size_y = 0;
       }
       changed_properties = true;
     }
@@ -489,13 +525,9 @@ set_properties_now(WindowProperties &properties) {
   x11GraphicsPipe *x11_pipe;
   DCAST_INTO_V(x11_pipe, _pipe);
 
-  // We're either going into or out of fullscreen, or are in fullscreen
-  // and are changing the resolution.
-  bool is_fullscreen = _properties.has_fullscreen() && _properties.get_fullscreen();
-  bool want_fullscreen = properties.has_fullscreen() ? properties.get_fullscreen() : is_fullscreen;
-
-  if (is_fullscreen != want_fullscreen || (is_fullscreen && properties.has_size())) {
-    if (want_fullscreen) {
+  // Handle fullscreen mode.
+  if (properties.has_fullscreen()) {
+    if (properties.get_fullscreen()) {
       if (_have_xrandr) {
 #ifdef HAVE_XRANDR
         if (x11display_cat.is_debug()) {
@@ -508,9 +540,10 @@ set_properties_now(WindowProperties &properties) {
         }
 
         XRRScreenConfiguration* conf = XRRGetScreenInfo(_display, x11_pipe->get_root());
-        SizeID old_size_id = XRRConfigCurrentConfiguration(conf, &_orig_rotation);
-        SizeID new_size_id = (SizeID) -1;
-        int num_sizes = 0, reqsizex, reqsizey;
+        if (_orig_size_id == (SizeID) -1) {
+          _orig_size_id = XRRConfigCurrentConfiguration(conf, &_orig_rotation);
+        }
+        int num_sizes, reqsizex, reqsizey, new_size_id = -1;
         if (properties.has_size()) {
           reqsizex = properties.get_x_size();
           reqsizey = properties.get_y_size();
@@ -526,18 +559,16 @@ set_properties_now(WindowProperties &properties) {
             new_size_id = i;
           }
         }
-        if (new_size_id == (SizeID) -1) {
+        if (new_size_id == -1) {
           x11display_cat.error()
             << "Videocard has no supported display resolutions at specified res ("
-            << reqsizex << " x " << reqsizey << ")\n";
+            << reqsizex << " x " << reqsizey <<")\n";
+          _orig_size_id = -1;
         } else {
-          if (new_size_id != old_size_id) {
-
+          if (new_size_id != _orig_size_id) {
             XRRSetScreenConfig(_display, conf, x11_pipe->get_root(), new_size_id, _orig_rotation, CurrentTime);
-            if (_orig_size_id == (SizeID) -1) {
-              // Remember the original resolution so we can switch back to it.
-              _orig_size_id = old_size_id;
-            }
+          } else {
+            _orig_size_id = -1;
           }
         }
 #endif
@@ -554,7 +585,7 @@ set_properties_now(WindowProperties &properties) {
       if (_have_xrandr && _orig_size_id != (SizeID) -1) {
         XRRScreenConfiguration* conf = XRRGetScreenInfo(_display, x11_pipe->get_root());
         XRRSetScreenConfig(_display, conf, x11_pipe->get_root(), _orig_size_id, _orig_rotation, CurrentTime);
-        _orig_size_id = (SizeID) -1;
+        _orig_size_id = -1;
       }
 #endif
       // Set the origin back to what it was
@@ -598,7 +629,8 @@ set_properties_now(WindowProperties &properties) {
   // on the fly.
 
   // We'll pass some property requests on as a window manager hint.
-  set_wm_properties(properties, true);
+  WindowProperties wm_properties = _properties;
+  wm_properties.add_properties(properties);
 
   // The window title may be changed by issuing another hint request.
   // Assume this will be honored.
@@ -625,7 +657,6 @@ set_properties_now(WindowProperties &properties) {
     changes.y = 0;
     value_mask |= CWX | CWY;
     properties.clear_origin();
-
   } else if (properties.has_origin()) {
     changes.x = properties.get_x_origin();
     changes.y = properties.get_y_origin();
@@ -634,20 +665,18 @@ set_properties_now(WindowProperties &properties) {
     properties.clear_origin();
   }
 
-  // This, too.  But we can't currently change out of fixed_size mode.
-  if (properties.has_fixed_size() && properties.get_fixed_size()) {
-    _properties.set_fixed_size(properties.get_fixed_size());
-    properties.clear_fixed_size();
-    _fixed_size = _properties.get_size();
-  }
-
   if (properties.has_size()) {
-    changes.width = properties.get_x_size();
-    changes.height = properties.get_y_size();
-    value_mask |= (CWWidth | CWHeight);
-
-    if (_properties.get_fixed_size()) {
-      _fixed_size = properties.get_size();
+    if (!_properties.get_fixed_size() && !properties.get_fixed_size()) {
+      // If not fixed size, ask X to make the window change directly
+      changes.width = properties.get_x_size();
+      changes.height = properties.get_y_size();
+      value_mask |= (CWWidth | CWHeight);
+    } else {
+      // Else, let this fall through to apply_wm_properties()
+      // and wait for a future ConfigureEvent (*not* the very
+      // next one).
+      _expected_fixed_size_x = properties.get_x_size();
+      _expected_fixed_size_y = properties.get_y_size();
     }
     properties.clear_size();
   }
@@ -674,6 +703,22 @@ set_properties_now(WindowProperties &properties) {
 
     value_mask |= (CWStackMode);
     properties.clear_z_order();
+  }
+
+  if (value_mask != 0) {
+    XReconfigureWMWindow(_display, _xwindow, _screen, value_mask, &changes);
+
+    if (x11display_cat.is_debug()) {
+      x11display_cat.debug()
+        << "asked X to reconfigure window\n";
+      if (value_mask & CWWidth + CWHeight)
+        x11display_cat.debug() << "\tsize: " << changes.width << 'x' << changes.height << '\n';
+      if (value_mask & CWX + CWY)
+        x11display_cat.debug() << "\torigin: " << changes.x << 'x' << changes.y << '\n';
+    }
+
+    // Don't draw anything until this is done reconfiguring.
+    _awaiting_configure = true;
   }
 
   // We hide the cursor by setting it to an invisible pixmap.
@@ -796,14 +841,7 @@ set_properties_now(WindowProperties &properties) {
     }
   }
 
-  if (value_mask != 0) {
-    // We must call this after changing the WM properties, otherwise
-    // we may get misleading ConfigureNotify events in the wrong order.
-    XReconfigureWMWindow(_display, _xwindow, _screen, value_mask, &changes);
-
-    // Don't draw anything until this is done reconfiguring.
-    _awaiting_configure = true;
-  }
+  set_wm_properties(wm_properties, true);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -982,11 +1020,6 @@ open_window() {
       << "failed to create X window.\n";
     return false;
   }
-
-  if (_properties.get_fixed_size()) {
-    _fixed_size = _properties.get_size();
-  }
-
   set_wm_properties(_properties, false);
 
   // We don't specify any fancy properties of the XIC.  It would be
@@ -1059,8 +1092,8 @@ set_wm_properties(const WindowProperties &properties, bool already_mapped) {
   XTextProperty window_name;
   XTextProperty *window_name_p = (XTextProperty *)NULL;
   if (properties.has_title()) {
-    const char *name = properties.get_title().c_str();
-    if (XStringListToTextProperty((char **)&name, 1, &window_name) != 0) {
+    char *name = (char *)properties.get_title().c_str();
+    if (XStringListToTextProperty(&name, 1, &window_name) != 0) {
       window_name_p = &window_name;
     }
   }
@@ -1081,19 +1114,30 @@ set_wm_properties(const WindowProperties &properties, bool already_mapped) {
         }
         size_hints_p->flags |= USPosition;
       }
-      LVecBase2i size = _properties.get_size();
       if (properties.has_size()) {
-        size = properties.get_size();
-        size_hints_p->width = size.get_x();
-        size_hints_p->height = size.get_y();
+        size_hints_p->width = properties.get_x_size();
+        size_hints_p->height = properties.get_y_size();
         size_hints_p->flags |= USSize;
-      }
-      if (properties.get_fixed_size()) {
-        size_hints_p->min_width = size.get_x();
-        size_hints_p->min_height = size.get_y();
-        size_hints_p->max_width = size.get_x();
-        size_hints_p->max_height = size.get_y();
-        size_hints_p->flags |= (PMinSize | PMaxSize);
+
+        if (x11display_cat.is_debug()) {
+          x11display_cat.debug()
+            << "asking window manager for size "
+            << properties.get_x_size() << 'x' << properties.get_y_size() << "\n";
+        }
+
+        if (properties.get_fixed_size()) {
+          size_hints_p->min_width = properties.get_x_size();
+          size_hints_p->min_height = properties.get_y_size();
+          size_hints_p->max_width = properties.get_x_size();
+          size_hints_p->max_height = properties.get_y_size();
+          size_hints_p->flags |= (PMinSize | PMaxSize);
+
+          if (x11display_cat.is_debug()) {
+            x11display_cat.debug()
+              << "asking window manager for fixed size of "
+              << properties.get_x_size() << 'x' << properties.get_y_size() << "\n";
+          }
+        }
       }
     }
   }
@@ -1133,21 +1177,18 @@ set_wm_properties(const WindowProperties &properties, bool already_mapped) {
   SetAction set_data[max_set_data];
   int next_set_data = 0;
 
-  if (properties.has_fullscreen()) {
-    if (properties.get_fullscreen()) {
-      // For a "fullscreen" request, we pass this through, hoping the
-      // window manager will support EWMH.
-      type_data[next_type_data++] = x11_pipe->_net_wm_window_type_fullscreen;
+  if (properties.get_fullscreen()) {
+    // For a "fullscreen" request, we pass this through, hoping the
+    // window manager will support EWMH.
+    type_data[next_type_data++] = x11_pipe->_net_wm_window_type_fullscreen;
 
-      // We also request it as a state.
-      state_data[next_state_data++] = x11_pipe->_net_wm_state_fullscreen;
-      // Don't ask me why this has to be 1/0 and not _net_wm_state_add.
-      // It doesn't seem to work otherwise.
-      set_data[next_set_data++] = SetAction(x11_pipe->_net_wm_state_fullscreen, 1);
-
-    } else {
-      set_data[next_set_data++] = SetAction(x11_pipe->_net_wm_state_fullscreen, 0);
-    }
+    // We also request it as a state.
+    state_data[next_state_data++] = x11_pipe->_net_wm_state_fullscreen;
+    // Don't ask me why this has to be 1/0 and not _net_wm_state_add.
+    // It doesn't seem to work otherwise.
+    set_data[next_set_data++] = SetAction(x11_pipe->_net_wm_state_fullscreen, 1);
+  } else {
+    set_data[next_set_data++] = SetAction(x11_pipe->_net_wm_state_fullscreen, 0);
   }
 
   // If we asked for a window without a border, there's no excellent
