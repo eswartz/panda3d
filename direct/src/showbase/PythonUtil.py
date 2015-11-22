@@ -327,7 +327,10 @@ def adjust(command = None, dim = 1, parent = None, **kw):
     10.0
     """
     # Make sure we enable Tk
-    from direct.tkwidgets import Valuator
+    # Don't use a regular import, to prevent ModuleFinder from picking
+    # it up as a dependency when building a .p3d package.
+    import importlib
+    Valuator = importlib.import_module('direct.tkwidgets.Valuator')
     # Set command if specified
     if command:
         kw['command'] = lambda x: apply(command, x)
@@ -1995,7 +1998,7 @@ def pstatcollect(scope, level = None):
 
     try:
 
-        if not (__dev__ or config.GetBool('force-pstatcollect', 0)) or \
+        if not (__dev__ or ConfigVariableBool('force-pstatcollect', False)) or \
            not scope:
             return decorator
 
