@@ -708,6 +708,11 @@ public:
 
   bool _supports_bgr;
   bool _supports_rescale_normal;
+
+#ifndef OPENGLES
+  bool _use_separate_specular_color;
+#endif
+
   bool _supports_packed_dabc;
 
   PFNGLACTIVETEXTUREPROC _glActiveTexture;
@@ -870,6 +875,12 @@ public:
   GLenum _mirror_clamp;
   GLenum _mirror_edge_clamp;
   GLenum _mirror_border_clamp;
+
+#ifndef OPENGLES
+  bool _supports_texture_lod;
+  bool _supports_texture_lod_bias;
+#endif
+
 #ifndef OPENGLES_1
   GLsizei _instance_count;
 #endif
