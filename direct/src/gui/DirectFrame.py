@@ -1,4 +1,17 @@
-"""Undocumented Module"""
+"""A DirectFrame is a basic DirectGUI component that acts as the base
+class for various other components, and can also serve as a basic
+container to hold other DirectGUI components.
+
+A DirectFrame can have:
+
+* A background texture (pass in path to image, or Texture Card)
+* A midground geometry item (pass in geometry)
+* A foreground text Node (pass in text string or OnscreenText)
+
+Each of these has 1 or more states.  The same object can be used for
+all states or each state can have a different text/geom/image (for
+radio button and check button indicators, for example).
+"""
 
 __all__ = ['DirectFrame']
 
@@ -19,14 +32,6 @@ class DirectFrame(DirectGuiWidget):
     DefDynGroups = ('text', 'geom', 'image')
     def __init__(self, parent = None, **kw):
         # Inherits from DirectGuiWidget
-        # A Direct Frame can have:
-        # - A background texture (pass in path to image, or Texture Card)
-        # - A midground geometry item (pass in geometry)
-        # - A foreground text Node (pass in text string or Onscreen Text)
-        # Each of these has 1 or more states
-        # The same object can be used for all states or each
-        # state can have a different text/geom/image (for radio button
-        # and check button indicators, for example).
         optiondefs = (
             # Define type of DirectGuiWidget
             ('pgFunc',          PGItem,     None),
@@ -56,7 +61,14 @@ class DirectFrame(DirectGuiWidget):
     def destroy(self):
         DirectGuiWidget.destroy(self)
 
-    def setText(self):
+    def clearText(self):
+        self['text'] = None
+        self.setText()
+
+    def setText(self, text=None):
+        if text is not None:
+            self['text'] = text
+
         # Determine if user passed in single string or a sequence
         if self['text'] == None:
             textList = (None,) * self['numStates']
@@ -95,7 +107,14 @@ class DirectFrame(DirectGuiWidget):
                         sort = DGG.TEXT_SORT_INDEX,
                         )
 
-    def setGeom(self):
+    def clearGeom(self):
+        self['geom'] = None
+        self.setGeom()
+
+    def setGeom(self, geom=None):
+        if geom is not None:
+            self['geom'] = geom
+
         # Determine argument type
         geom = self['geom']
 
@@ -137,7 +156,14 @@ class DirectFrame(DirectGuiWidget):
                         geom = geom, scale = 1,
                         sort = DGG.GEOM_SORT_INDEX)
 
-    def setImage(self):
+    def clearImage(self):
+        self['image'] = None
+        self.setImage()
+
+    def setImage(self, image=None):
+        if image is not None:
+            self['image'] = image
+
         # Determine argument type
         arg = self['image']
         if arg == None:

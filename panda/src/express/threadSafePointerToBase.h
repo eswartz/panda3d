@@ -40,9 +40,7 @@ protected:
   INLINE void reassign(To *ptr);
   INLINE void reassign(const ThreadSafePointerToBase<To> &copy);
 
-#ifdef DO_MEMORY_USAGE
   void update_type(To *ptr);
-#endif  // DO_MEMORY_USAGE
 
   // No assignment or retrieval functions are declared in
   // ThreadSafePointerToBase, because we will have to specialize on const vs.
@@ -51,11 +49,11 @@ protected:
 PUBLISHED:
   INLINE void clear();
 
-  void output(ostream &out) const;
+  void output(std::ostream &out) const;
 };
 
 template<class T>
-INLINE ostream &operator <<(ostream &out, const ThreadSafePointerToBase<T> &pointer) {
+INLINE std::ostream &operator <<(std::ostream &out, const ThreadSafePointerToBase<T> &pointer) {
   pointer.output(out);
   return out;
 }

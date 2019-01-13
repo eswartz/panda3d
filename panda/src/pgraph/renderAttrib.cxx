@@ -18,8 +18,10 @@
 #include "lightReMutexHolder.h"
 #include "pStatTimer.h"
 
-LightReMutex *RenderAttrib::_attribs_lock = NULL;
-RenderAttrib::Attribs *RenderAttrib::_attribs = NULL;
+using std::ostream;
+
+LightReMutex *RenderAttrib::_attribs_lock = nullptr;
+RenderAttrib::Attribs RenderAttrib::_attribs;
 TypeHandle RenderAttrib::_type_handle;
 
 size_t RenderAttrib::_garbage_index = 0;
@@ -31,26 +33,10 @@ PStatCollector RenderAttrib::_garbage_collect_pcollector("*:State Cache:Garbage 
  */
 RenderAttrib::
 RenderAttrib() {
-  if (_attribs == (Attribs *)NULL) {
+  if (_attribs_lock == nullptr) {
     init_attribs();
   }
   _saved_entry = -1;
-}
-
-/**
- * RenderAttribs are not meant to be copied.
- */
-RenderAttrib::
-RenderAttrib(const RenderAttrib &) {
-  nassertv(false);
-}
-
-/**
- * RenderAttribs are not meant to be copied.
- */
-void RenderAttrib::
-operator = (const RenderAttrib &) {
-  nassertv(false);
 }
 
 /**
@@ -113,14 +99,6 @@ cull_callback(CullTraverser *, const CullTraverserData &) const {
 }
 
 /**
- *
- */
-CPT(RenderAttrib) RenderAttrib::
-get_auto_shader_attrib_impl(const RenderState *state) const {
-  return NULL;
-}
-
-/**
  * This method overrides ReferenceCount::unref() to clear the pointer from the
  * global object pool when its reference count goes to zero.
  */
@@ -178,11 +156,7 @@ write(ostream &out, int indent_level) const {
 int RenderAttrib::
 get_num_attribs() {
   LightReMutexHolder holder(*_attribs_lock);
-
-  if (_attribs == (Attribs *)NULL) {
-    return 0;
-  }
-  return _attribs->get_num_entries();
+  return _attribs.get_num_entries();
 }
 
 /**
@@ -194,13 +168,10 @@ void RenderAttrib::
 list_attribs(ostream &out) {
   LightReMutexHolder holder(*_attribs_lock);
 
-  out << _attribs->get_num_entries() << " attribs:\n";
-  size_t size = _attribs->get_size();
+  size_t size = _attribs.get_num_entries();
+  out << size << " attribs:\n";
   for (size_t si = 0; si < size; ++si) {
-    if (!_attribs->has_element(si)) {
-      continue;
-    }
-    const RenderAttrib *attrib = _attribs->get_key(si);
+    const RenderAttrib *attrib = _attribs.get_key(si);
     attrib->write(out, 2);
   }
 }
@@ -211,39 +182,51 @@ list_attribs(ostream &out) {
  */
 int RenderAttrib::
 garbage_collect() {
-  if (_attribs == (Attribs *)NULL || !garbage_collect_states) {
+  if (!garbage_collect_states) {
     return 0;
   }
   LightReMutexHolder holder(*_attribs_lock);
 
   PStatTimer timer(_garbage_collect_pcollector);
-  int orig_size = _attribs->get_num_entries();
+  size_t orig_size = _attribs.get_num_entries();
 
 #ifdef _DEBUG
-  nassertr(_attribs->validate(), 0);
+  nassertr(_attribs.validate(), 0);
 #endif
 
   // How many elements to process this pass?
-  int size = _attribs->get_size();
-  int num_this_pass = int(size * garbage_collect_states_rate);
+  size_t size = orig_size;
+  size_t num_this_pass = std::max(0, int(size * garbage_collect_states_rate));
   if (num_this_pass <= 0) {
     return 0;
   }
-  num_this_pass = min(num_this_pass, size);
-  int stop_at_element = (_garbage_index + num_this_pass) % size;
 
   size_t si = _garbage_index;
+  if (si >= size) {
+    si = 0;
+  }
+
+  num_this_pass = std::min(num_this_pass, size);
+  size_t stop_at_element = (si + num_this_pass) % size;
+
   do {
-    if (_attribs->has_element(si)) {
-      RenderAttrib *attrib = (RenderAttrib *)_attribs->get_key(si);
-      if (attrib->get_ref_count() == 1) {
-        // This attrib has recently been unreffed to 1 (the one we added when
-        // we stored it in the cache).  Now it's time to delete it.  This is
-        // safe, because we're holding the _attribs_lock, so it's not possible
-        // for some other thread to find the attrib in the cache and ref it
-        // while we're doing this.
-        attrib->release_new();
-        unref_delete(attrib);
+    RenderAttrib *attrib = (RenderAttrib *)_attribs.get_key(si);
+    if (attrib->get_ref_count() == 1) {
+      // This attrib has recently been unreffed to 1 (the one we added when
+      // we stored it in the cache).  Now it's time to delete it.  This is
+      // safe, because we're holding the _attribs_lock, so it's not possible
+      // for some other thread to find the attrib in the cache and ref it
+      // while we're doing this.
+      attrib->release_new();
+      unref_delete(attrib);
+
+      // When we removed it from the hash map, it swapped the last element
+      // with the one we just removed.  So the current index contains one we
+      // still need to visit.
+      --size;
+      --si;
+      if (stop_at_element > 0) {
+        --stop_at_element;
       }
     }
 
@@ -251,12 +234,17 @@ garbage_collect() {
   } while (si != stop_at_element);
   _garbage_index = si;
 
+  nassertr(_attribs.get_num_entries() == size, 0);
+
 #ifdef _DEBUG
-  nassertr(_attribs->validate(), 0);
+  nassertr(_attribs.validate(), 0);
 #endif
 
-  size_t new_size = _attribs->get_num_entries();
-  return orig_size - new_size;
+  // If we just cleaned up a lot of attribs, see if we can reduce the table in
+  // size.  This will help reduce iteration overhead in the future.
+  _attribs.consider_shrink_table();
+
+  return (int)orig_size - (int)size;
 }
 
 /**
@@ -267,43 +255,34 @@ garbage_collect() {
 bool RenderAttrib::
 validate_attribs() {
   LightReMutexHolder holder(*_attribs_lock);
-  if (_attribs->is_empty()) {
+  if (_attribs.is_empty()) {
     return true;
   }
 
-  if (!_attribs->validate()) {
+  if (!_attribs.validate()) {
     pgraph_cat.error()
       << "RenderAttrib::_attribs cache is invalid!\n";
 
-    size_t size = _attribs->get_size();
+    size_t size = _attribs.get_num_entries();
     for (size_t si = 0; si < size; ++si) {
-      if (!_attribs->has_element(si)) {
-        continue;
-      }
-      const RenderAttrib *attrib = _attribs->get_key(si);
-      cerr << si << ": " << attrib << "\n";
-      attrib->write(cerr, 2);
+      const RenderAttrib *attrib = _attribs.get_key(si);
+      //cerr << si << ": " << attrib << "\n";
+      attrib->write(std::cerr, 2);
     }
 
     return false;
   }
 
-  size_t size = _attribs->get_size();
+  size_t size = _attribs.get_num_entries();
   size_t si = 0;
-  while (si < size && !_attribs->has_element(si)) {
-    ++si;
-  }
   nassertr(si < size, false);
-  nassertr(_attribs->get_key(si)->get_ref_count() >= 0, false);
+  nassertr(_attribs.get_key(si)->get_ref_count() >= 0, false);
   size_t snext = si;
   ++snext;
-  while (snext < size && !_attribs->has_element(snext)) {
-    ++snext;
-  }
   while (snext < size) {
-    nassertr(_attribs->get_key(snext)->get_ref_count() >= 0, false);
-    const RenderAttrib *ssi = _attribs->get_key(si);
-    const RenderAttrib *ssnext = _attribs->get_key(snext);
+    nassertr(_attribs.get_key(snext)->get_ref_count() >= 0, false);
+    const RenderAttrib *ssi = _attribs.get_key(si);
+    const RenderAttrib *ssnext = _attribs.get_key(snext);
     int c = ssi->compare_to(*ssnext);
     int ci = ssnext->compare_to(*ssi);
     if ((ci < 0) != (c > 0) ||
@@ -321,9 +300,6 @@ validate_attribs() {
     }
     si = snext;
     ++snext;
-    while (snext < size && !_attribs->has_element(snext)) {
-      ++snext;
-    }
   }
 
   return true;
@@ -338,7 +314,7 @@ validate_attribs() {
  */
 CPT(RenderAttrib) RenderAttrib::
 return_new(RenderAttrib *attrib) {
-  nassertr(attrib != (RenderAttrib *)NULL, attrib);
+  nassertr(attrib != nullptr, attrib);
   if (!uniquify_attribs) {
     attrib->calc_hash();
     return attrib;
@@ -359,7 +335,7 @@ return_new(RenderAttrib *attrib) {
  */
 CPT(RenderAttrib) RenderAttrib::
 return_unique(RenderAttrib *attrib) {
-  nassertr(attrib != (RenderAttrib *)NULL, attrib);
+  nassertr(attrib != nullptr, attrib);
 
   attrib->calc_hash();
 
@@ -376,19 +352,19 @@ return_unique(RenderAttrib *attrib) {
   LightReMutexHolder holder(*_attribs_lock);
 
   if (attrib->_saved_entry != -1) {
-    // This attrib is already in the cache.  nassertr(_attribs->find(attrib)
+    // This attrib is already in the cache.  nassertr(_attribs.find(attrib)
     // == attrib->_saved_entry, attrib);
     return attrib;
   }
 
-  int si = _attribs->find(attrib);
+  int si = _attribs.find(attrib);
   if (si != -1) {
     // There's an equivalent attrib already in the set.  Return it.  If this
     // is a newly created RenderAttrib, though, be sure to delete it.
     if (attrib->get_ref_count() == 0) {
       delete attrib;
     }
-    return _attribs->get_key(si);
+    return _attribs.get_key(si);
   }
 
   // Not already in the set; add it.
@@ -398,7 +374,7 @@ return_unique(RenderAttrib *attrib) {
     // deleted while it's in it.
     attrib->ref();
   }
-  si = _attribs->store(attrib, Empty());
+  si = _attribs.store(attrib, nullptr);
 
   // Save the index and return the input attrib.
   attrib->_saved_entry = si;
@@ -514,10 +490,8 @@ release_new() {
   nassertv(_attribs_lock->debug_is_locked());
 
   if (_saved_entry != -1) {
-    // nassertv(_attribs->find(this) == _saved_entry);
-    _saved_entry = _attribs->find(this);
-    _attribs->remove_element(_saved_entry);
     _saved_entry = -1;
+    nassertv_always(_attribs.remove(this));
   }
 }
 
@@ -530,8 +504,6 @@ release_new() {
  */
 void RenderAttrib::
 init_attribs() {
-  _attribs = new Attribs;
-
   // TODO: we should have a global Panda mutex to allow us to safely create
   // _attribs_lock without a startup race condition.  For the meantime, this
   // is OK because we guarantee that this method is called at static init

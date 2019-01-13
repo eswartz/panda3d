@@ -15,6 +15,7 @@
 #include "cocoaGraphicsStateGuardian.h"
 #include "config_cocoadisplay.h"
 #include "cocoaGraphicsPipe.h"
+#include "cocoaPandaApp.h"
 
 #include "graphicsPipe.h"
 #include "keyboardButton.h"
@@ -29,6 +30,7 @@
 
 #import "cocoaPandaView.h"
 #import "cocoaPandaWindow.h"
+#import "cocoaPandaAppDelegate.h"
 
 #import <ApplicationServices/ApplicationServices.h>
 #import <Foundation/NSAutoreleasePool.h>
@@ -48,7 +50,7 @@ TypeHandle CocoaGraphicsWindow::_type_handle;
  */
 CocoaGraphicsWindow::
 CocoaGraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
-                    const string &name,
+                    const std::string &name,
                     const FrameBufferProperties &fb_prop,
                     const WindowProperties &win_prop,
                     int flags,
@@ -65,9 +67,42 @@ CocoaGraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
   _fullscreen_mode = NULL;
   _windowed_mode = NULL;
 
-  GraphicsWindowInputDevice device =
+  // Now that we know for sure we want a window, we can create the Cocoa app.
+  // This will cause the application icon to appear and start bouncing.
+  if (NSApp == nil) {
+    [CocoaPandaApp sharedApplication];
+
+    CocoaPandaAppDelegate *delegate = [[CocoaPandaAppDelegate alloc] init];
+    [NSApp setDelegate:delegate];
+
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 1060
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+#endif
+    NSMenu *mainMenu = [[NSMenu alloc] init];
+
+    NSMenuItem *applicationMenuItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:applicationMenuItem];
+
+    NSMenu *applicationMenu = [[NSMenu alloc] init];
+
+    NSMenuItem *item = [[NSMenuItem alloc] init];
+    item.action = @selector(terminate:);
+    item.keyEquivalent = @"q";
+
+    NSString *appName = [NSRunningApplication currentApplication].localizedName;
+    item.title = [NSString stringWithFormat:@"Quit %@", appName];
+
+    [applicationMenu addItem:item];
+
+    [mainMenu setSubmenu:applicationMenu forItem:applicationMenuItem];
+    [NSApp setMainMenu:mainMenu];
+    [NSApp finishLaunching];
+  }
+
+  PT(GraphicsWindowInputDevice) device =
     GraphicsWindowInputDevice::pointer_and_keyboard(this, "keyboard_mouse");
-  add_input_device(device);
+  _input_devices.push_back(device.p());
+  _input = std::move(device);
 
   CocoaGraphicsPipe *cocoa_pipe;
   DCAST_INTO_V(cocoa_pipe, _pipe);
@@ -144,7 +179,7 @@ begin_frame(FrameMode mode, Thread *current_thread) {
   nassertr(_view != nil, false);
 
   // Place a lock on the context.
-  CGLLockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+  cocoagsg->lock_context();
 
   // Set the drawable.
   if (_properties.get_fullscreen()) {
@@ -210,7 +245,7 @@ end_frame(FrameMode mode, Thread *current_thread) {
   CocoaGraphicsStateGuardian *cocoagsg;
   DCAST_INTO_V(cocoagsg, _gsg);
 
-  CGLUnlockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+  cocoagsg->unlock_context();
 
   if (mode == FM_render) {
     // end_render_texture();
@@ -239,7 +274,16 @@ end_flip() {
     CocoaGraphicsStateGuardian *cocoagsg;
     DCAST_INTO_V(cocoagsg, _gsg);
 
-    CGLLockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+    if (_vsync_enabled) {
+      AtomicAdjust::Integer cur_frame = ClockObject::get_global_clock()->get_frame_count();
+      if (AtomicAdjust::set(cocoagsg->_last_wait_frame, cur_frame) != cur_frame) {
+        cocoagsg->_swap_lock.lock();
+        cocoagsg->_swap_condition.wait();
+        cocoagsg->_swap_lock.unlock();
+      }
+    }
+
+    cocoagsg->lock_context();
 
     // Swap the front and back buffer.
     [cocoagsg->_context flushBuffer];
@@ -247,7 +291,7 @@ end_flip() {
     // Flush the window
     [[_view window] flushWindow];
 
-    CGLUnlockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+    cocoagsg->unlock_context();
   }
   GraphicsWindow::end_flip();
 }
@@ -277,7 +321,21 @@ process_events() {
       break;
     }
 
-    [NSApp sendEvent: event];
+    // If we're in fullscreen mode, send mouse events directly to the window.
+    NSEventType type = [event type];
+    if (_properties.get_fullscreen() && (
+        type == NSLeftMouseDown || type == NSLeftMouseUp ||
+        type == NSRightMouseDown || type == NSRightMouseUp ||
+        type == NSOtherMouseDown || type == NSOtherMouseUp ||
+        type == NSLeftMouseDragged ||
+        type == NSRightMouseDragged ||
+        type == NSOtherMouseDragged ||
+        type == NSMouseMoved ||
+        type == NSScrollWheel)) {
+      [_window sendEvent: event];
+    } else {
+      [NSApp sendEvent: event];
+    }
   }
 
   if (_window != nil) {
@@ -312,6 +370,13 @@ open_window() {
       cocoagsg->choose_pixel_format(_fb_properties, cocoa_pipe->_display, false);
       _gsg = cocoagsg;
     }
+  }
+
+  if (cocoagsg->_context == nil) {
+    // Could not obtain a proper context.
+    _gsg.clear();
+    close_window();
+    return false;
   }
 
   // Fill in the blanks.
@@ -357,7 +422,7 @@ open_window() {
       cocoadisplay_cat.info()
         << "os_handle type " << os_handle->get_type() << "\n";
 
-      void *ptr_handle;
+      void *ptr_handle = nullptr;
 
       // Depending on whether the window handle comes from a Carbon or a Cocoa
       // application, it could be either a HIViewRef or an NSView or NSWindow.
@@ -385,6 +450,16 @@ open_window() {
     }
   }
 
+  // Iterate over the screens to find the one with our display ID.
+  NSScreen *screen;
+  NSEnumerator *e = [[NSScreen screens] objectEnumerator];
+  while (screen = (NSScreen *) [e nextObject]) {
+    NSNumber *num = [[screen deviceDescription] objectForKey: @"NSScreenNumber"];
+    if (cocoa_pipe->_display == (CGDirectDisplayID) [num longValue]) {
+      break;
+    }
+  }
+
   // Center the window if coordinates were set to -1 or -2 TODO: perhaps in
   // future, in the case of -1, it should use the origin used in a previous
   // run of Panda
@@ -392,7 +467,7 @@ open_window() {
   if (parent_nsview != NULL) {
     container = [parent_nsview bounds];
   } else {
-    container = [cocoa_pipe->_screen frame];
+    container = [screen frame];
     container.origin = NSMakePoint(0, 0);
   }
   int x = _properties.get_x_origin();
@@ -439,7 +514,7 @@ open_window() {
     _window = [[CocoaPandaWindow alloc]
                initWithContentRect: rect
                styleMask:windowStyle
-               screen:cocoa_pipe->_screen
+               screen:screen
                window:this];
 
     if (_window == nil) {
@@ -450,7 +525,7 @@ open_window() {
   }
 
   // Lock the context, so we can safely operate on it.
-  CGLLockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+  cocoagsg->lock_context();
 
   // Create the NSView to render to.
   NSRect rect = NSMakeRect(0, 0, _properties.get_x_size(), _properties.get_y_size());
@@ -574,7 +649,7 @@ open_window() {
   cocoagsg->reset_if_new();
 
   // Release the context.
-  CGLUnlockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+  cocoagsg->unlock_context();
 
   if (!cocoagsg->is_valid()) {
     close_window();
@@ -588,6 +663,9 @@ open_window() {
   }
   _fb_properties = cocoagsg->get_fb_properties();
 
+  // Reset dead key state.
+  _dead_key_state = 0;
+
   // Get the initial mouse position.
   NSPoint pos = [_window mouseLocationOutsideOfEventStream];
   NSPoint loc = [_view convertPoint:pos fromView:nil];
@@ -599,6 +677,8 @@ open_window() {
       _properties.get_mouse_mode() == WindowProperties::M_relative) {
     mouse_mode_relative();
   }
+
+  _vsync_enabled = sync_video && cocoagsg->setup_vsync();
 
   return true;
 }
@@ -623,9 +703,9 @@ close_window() {
     cocoagsg = DCAST(CocoaGraphicsStateGuardian, _gsg);
 
     if (cocoagsg != NULL && cocoagsg->_context != nil) {
-      CGLLockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+      cocoagsg->lock_context();
       [cocoagsg->_context clearDrawable];
-      CGLUnlockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+      cocoagsg->unlock_context();
     }
     _gsg.clear();
   }
@@ -640,6 +720,8 @@ close_window() {
     [_view release];
     _view = nil;
   }
+
+  _vsync_enabled = false;
 
   GraphicsWindow::close_window();
 }
@@ -913,7 +995,7 @@ set_properties_now(WindowProperties &properties) {
 
   if (properties.has_cursor_hidden()) {
     if (properties.get_cursor_hidden() != _properties.get_cursor_hidden()) {
-      if (properties.get_cursor_hidden() && _input_devices[0].get_pointer().get_in_window()) {
+      if (properties.get_cursor_hidden() && _input->get_pointer().get_in_window()) {
         [NSCursor hide];
         _mouse_hidden = true;
       } else if (_mouse_hidden) {
@@ -1225,7 +1307,7 @@ load_image(const Filename &filename) {
   if (vfile == NULL) {
     return nil;
   }
-  istream *str = vfile->open_read_file(true);
+  std::istream *str = vfile->open_read_file(true);
   if (str == NULL) {
     cocoadisplay_cat.error()
       << "Could not open file " << filename << " for reading\n";
@@ -1354,6 +1436,8 @@ handle_foreground_event(bool foreground) {
     }
   }
 
+  _dead_key_state = 0;
+
   WindowProperties properties;
   properties.set_foreground(foreground);
   system_changed_properties(properties);
@@ -1379,7 +1463,7 @@ handle_foreground_event(bool foreground) {
  */
 bool CocoaGraphicsWindow::
 handle_close_request() {
-  string close_request_event = get_close_request_event();
+  std::string close_request_event = get_close_request_event();
   if (!close_request_event.empty()) {
     // In this case, the app has indicated a desire to intercept the request
     // and process it directly.
@@ -1415,11 +1499,12 @@ handle_close_event() {
     cocoagsg = DCAST(CocoaGraphicsStateGuardian, _gsg);
 
     if (cocoagsg != NULL && cocoagsg->_context != nil) {
-      CGLLockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+      cocoagsg->lock_context();
       [cocoagsg->_context clearDrawable];
-      CGLUnlockContext((CGLContextObj) [cocoagsg->_context CGLContextObj]);
+      cocoagsg->unlock_context();
     }
     _gsg.clear();
+    _vsync_enabled = false;
   }
 
   // Dump the view, too
@@ -1488,7 +1573,7 @@ handle_key_event(NSEvent *event) {
     // flaws are: - OS eats unmodified F11, F12, scroll lock, pause - no up
     // events for caps lock - no robust way to distinguish updown for modkeys
     if ([event type] == NSKeyUp) {
-      _input_devices[0].raw_button_up(raw_button);
+      _input->raw_button_up(raw_button);
 
     } else if ([event type] == NSFlagsChanged) {
       bool down = false;
@@ -1510,15 +1595,15 @@ handle_key_event(NSEvent *event) {
         down = (modifierFlags & 0x0010);
       } else if (raw_button == KeyboardButton::caps_lock()) {
         // Emulate down-up, annoying hack!
-        _input_devices[0].raw_button_down(raw_button);
+        _input->raw_button_down(raw_button);
       }
       if (down) {
-        _input_devices[0].raw_button_down(raw_button);
+        _input->raw_button_down(raw_button);
       } else {
-        _input_devices[0].raw_button_up(raw_button);
+        _input->raw_button_up(raw_button);
       }
     } else if (![event isARepeat]) {
-      _input_devices[0].raw_button_down(raw_button);
+      _input->raw_button_down(raw_button);
     }
   }
 
@@ -1527,24 +1612,43 @@ handle_key_event(NSEvent *event) {
     return;
   }
 
+  if ([event type] == NSKeyDown) {
+    // Translate it to a unicode character for keystrokes.  I would use
+    // interpretKeyEvents and insertText, but that doesn't handle dead keys.
+    TISInputSourceRef input_source = TISCopyCurrentKeyboardInputSource();
+    CFDataRef layout_data = (CFDataRef)TISGetInputSourceProperty(input_source, kTISPropertyUnicodeKeyLayoutData);
+    const UCKeyboardLayout *layout = (const UCKeyboardLayout *)CFDataGetBytePtr(layout_data);
+
+    UInt32 modifier_state = (modifierFlags >> 16) & 0xFF;
+    UniChar ustr[8];
+    UniCharCount length;
+
+    UCKeyTranslate(layout, [event keyCode], kUCKeyActionDown, modifier_state,
+                   LMGetKbdType(), 0, &_dead_key_state, sizeof(ustr), &length, ustr);
+    CFRelease(input_source);
+
+    for (int i = 0; i < length; ++i) {
+      UniChar c = ustr[i];
+      if (cocoadisplay_cat.is_spam()) {
+        cocoadisplay_cat.spam()
+          << "Handling keystroke, character " << (int)c;
+        if (c < 128 && isprint(c)) {
+          cocoadisplay_cat.spam(false) << " '" << (char)c << "'";
+        }
+        cocoadisplay_cat.spam(false) << "\n";
+      }
+      _input->keystroke(c);
+    }
+  }
+
   NSString *str = [event charactersIgnoringModifiers];
   if (str == nil || [str length] == 0) {
     return;
   }
-  nassertv([str length] == 1);
+  nassertv_always([str length] == 1);
   unichar c = [str characterAtIndex: 0];
 
   ButtonHandle button = map_key(c);
-
-  if (c < 0xF700 || c >= 0xF900) {
-    // If a down event and not a special function key, process it as keystroke
-    // as well.
-    if ([event type] == NSKeyDown) {
-      NSString *origstr = [event characters];
-      c = [str characterAtIndex: 0];
-      _input_devices[0].keystroke(c);
-    }
-  }
 
   if (button == ButtonHandle::none()) {
     // That done, continue trying to find out the button handle.
@@ -1571,9 +1675,9 @@ handle_key_event(NSEvent *event) {
 
   // Let's get it off our chest.
   if ([event type] == NSKeyUp) {
-    _input_devices[0].button_up(button);
+    _input->button_up(button);
   } else {
-    _input_devices[0].button_down(button);
+    _input->button_down(button);
   }
 }
 
@@ -1584,9 +1688,9 @@ void CocoaGraphicsWindow::
 handle_modifier(NSUInteger modifierFlags, NSUInteger mask, ButtonHandle button) {
   if ((modifierFlags ^ _modifier_keys) & mask) {
     if (modifierFlags & mask) {
-      _input_devices[0].button_down(button);
+      _input->button_down(button);
     } else {
-      _input_devices[0].button_up(button);
+      _input->button_up(button);
     }
   }
 }
@@ -1598,14 +1702,14 @@ handle_modifier(NSUInteger modifierFlags, NSUInteger mask, ButtonHandle button) 
 void CocoaGraphicsWindow::
 handle_mouse_button_event(int button, bool down) {
   if (down) {
-    _input_devices[0].button_down(MouseButton::button(button));
+    _input->button_down(MouseButton::button(button));
 
 #ifndef NDEBUG
     cocoadisplay_cat.spam()
       << "Mouse button " << button << " down\n";
 #endif
   } else {
-    _input_devices[0].button_up(MouseButton::button(button));
+    _input->button_up(MouseButton::button(button));
 
 #ifndef NDEBUG
     cocoadisplay_cat.spam()
@@ -1624,7 +1728,7 @@ handle_mouse_moved_event(bool in_window, double x, double y, bool absolute) {
 
   if (absolute) {
     if (cocoadisplay_cat.is_spam()) {
-      if (in_window != _input_devices[0].get_pointer().get_in_window()) {
+      if (in_window != _input->get_pointer().get_in_window()) {
         if (in_window) {
           cocoadisplay_cat.spam() << "Mouse pointer entered window\n";
         } else {
@@ -1639,7 +1743,7 @@ handle_mouse_moved_event(bool in_window, double x, double y, bool absolute) {
 
   } else {
     // We received deltas, so add it to the current mouse position.
-    MouseData md = _input_devices[0].get_pointer();
+    MouseData md = _input->get_pointer();
     nx = md.get_x() + x;
     ny = md.get_y() + y;
   }
@@ -1665,8 +1769,11 @@ handle_mouse_moved_event(bool in_window, double x, double y, bool absolute) {
     }
   }
 
-  _input_devices[0].set_pointer(in_window, nx, ny,
-      ClockObject::get_global_clock()->get_frame_time());
+  if (in_window) {
+    _input->set_pointer_in_window(nx, ny);
+  } else {
+    _input->set_pointer_out_of_window();
+  }
 
   if (in_window != _mouse_hidden && _properties.get_cursor_hidden()) {
     // Hide the cursor if the mouse enters the window, and unhide it when the
@@ -1689,20 +1796,20 @@ handle_wheel_event(double x, double y) {
     << "Wheel delta " << x << ", " << y << "\n";
 
   if (y > 0.0) {
-    _input_devices[0].button_down(MouseButton::wheel_up());
-    _input_devices[0].button_up(MouseButton::wheel_up());
+    _input->button_down(MouseButton::wheel_up());
+    _input->button_up(MouseButton::wheel_up());
   } else if (y < 0.0) {
-    _input_devices[0].button_down(MouseButton::wheel_down());
-    _input_devices[0].button_up(MouseButton::wheel_down());
+    _input->button_down(MouseButton::wheel_down());
+    _input->button_up(MouseButton::wheel_down());
   }
 
   // TODO: check if this is correct, I don't own a MacBook
   if (x > 0.0) {
-    _input_devices[0].button_down(MouseButton::wheel_right());
-    _input_devices[0].button_up(MouseButton::wheel_right());
+    _input->button_down(MouseButton::wheel_right());
+    _input->button_up(MouseButton::wheel_right());
   } else if (x < 0.0) {
-    _input_devices[0].button_down(MouseButton::wheel_left());
-    _input_devices[0].button_up(MouseButton::wheel_left());
+    _input->button_down(MouseButton::wheel_left());
+    _input->button_up(MouseButton::wheel_left());
   }
 }
 

@@ -236,7 +236,7 @@ class FilterManager(DirectObject):
 
         return quad
 
-    def renderQuadInto(self, mul=1, div=1, align=1, depthtex=None, colortex=None, auxtex0=None, auxtex1=None):
+    def renderQuadInto(self, name="filter-stage", mul=1, div=1, align=1, depthtex=None, colortex=None, auxtex0=None, auxtex1=None):
 
         """ Creates an offscreen buffer for an intermediate
         computation. Installs a quad into the buffer.  Returns
@@ -250,7 +250,7 @@ class FilterManager(DirectObject):
 
         depthbits = bool(depthtex != None)
 
-        buffer = self.createBuffer("filter-stage", winx, winy, texgroup, depthbits)
+        buffer = self.createBuffer(name, winx, winy, texgroup, depthbits)
 
         if (buffer == None):
             return None
@@ -349,3 +349,15 @@ class FilterManager(DirectObject):
         self.nextsort = self.win.getSort() - 1000
         self.basex = 0
         self.basey = 0
+
+    #snake_case alias:
+    is_fullscreen = isFullscreen
+    resize_buffers = resizeBuffers
+    set_stacked_clears = setStackedClears
+    render_scene_into = renderSceneInto
+    get_scaled_size = getScaledSize
+    render_quad_into = renderQuadInto
+    get_clears = getClears
+    set_clears = setClears
+    create_buffer = createBuffer
+    window_event = windowEvent

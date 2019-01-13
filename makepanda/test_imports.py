@@ -7,13 +7,19 @@ import os, importlib
 import direct.showbase.VerboseImport
 
 
+import imp
 import panda3d
 dir = os.path.dirname(panda3d.__file__)
 
-for basename in os.listdir(dir):
-    module, ext = os.path.splitext(basename)
+extensions = set()
+for suffix in imp.get_suffixes():
+    extensions.add(suffix[0])
 
-    if ext in ('.pyd', '.so'):
+for basename in os.listdir(dir):
+    module = basename.split('.', 1)[0]
+    ext = basename[len(module):]
+
+    if ext in extensions:
         importlib.import_module('panda3d.%s' % (module))
 
 
@@ -56,6 +62,7 @@ import direct.directutil.LargeBlobSenderConsts
 import direct.directutil.Mopath
 import direct.directutil.Verify
 import direct.directutil.WeightedChoice
+import direct.dist.FreezeTool
 import direct.distributed.AsyncRequest
 import direct.distributed.CRCache
 import direct.distributed.CRDataCache
@@ -92,7 +99,6 @@ import direct.distributed.InterestWatcher
 import direct.distributed.MsgTypes
 import direct.distributed.MsgTypesCMU
 import direct.distributed.NetMessenger
-import direct.distributed.OldClientRepository
 import direct.distributed.ParentMgr
 import direct.distributed.PyDatagram
 import direct.distributed.PyDatagramIterator
@@ -229,7 +235,6 @@ import direct.showbase.VFSImporter
 import direct.showbase.WxGlobal
 import direct.showutil.BuildGeometry
 import direct.showutil.Effects
-import direct.showutil.FreezeTool
 import direct.showutil.Rope
 import direct.showutil.TexMemWatcher
 import direct.showutil.TexViewer

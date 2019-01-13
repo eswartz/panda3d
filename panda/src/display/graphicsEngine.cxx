@@ -47,6 +47,7 @@
 #include "displayRegionCullCallbackData.h"
 #include "displayRegionDrawCallbackData.h"
 #include "callbackGraphicsWindow.h"
+#include "depthTestAttrib.h"
 
 #if defined(WIN32)
   #define WINDOWS_LEAN_AND_MEAN
@@ -56,6 +57,8 @@
 #else
   #include <sys/time.h>
 #endif
+
+using std::string;
 
 PT(GraphicsEngine) GraphicsEngine::_global_ptr;
 
@@ -107,8 +110,8 @@ PStatCollector GraphicsEngine::_volume_sphere_pcollector("Collision Volumes:Coll
 PStatCollector GraphicsEngine::_test_sphere_pcollector("Collision Tests:CollisionSphere");
 PStatCollector GraphicsEngine::_volume_box_pcollector("Collision Volumes:CollisionBox");
 PStatCollector GraphicsEngine::_test_box_pcollector("Collision Tests:CollisionBox");
-PStatCollector GraphicsEngine::_volume_tube_pcollector("Collision Volumes:CollisionTube");
-PStatCollector GraphicsEngine::_test_tube_pcollector("Collision Tests:CollisionTube");
+PStatCollector GraphicsEngine::_volume_capsule_pcollector("Collision Volumes:CollisionCapsule");
+PStatCollector GraphicsEngine::_test_capsule_pcollector("Collision Tests:CollisionCapsule");
 PStatCollector GraphicsEngine::_volume_inv_sphere_pcollector("Collision Volumes:CollisionInvSphere");
 PStatCollector GraphicsEngine::_test_inv_sphere_pcollector("Collision Tests:CollisionInvSphere");
 PStatCollector GraphicsEngine::_volume_geom_pcollector("Collision Volumes:CollisionGeom");
@@ -147,13 +150,12 @@ GraphicsEngine(Pipeline *pipeline) :
   _lock("GraphicsEngine::_lock"),
   _loaded_textures_lock("GraphicsEngine::_loaded_textures_lock")
 {
-  if (_pipeline == (Pipeline *)NULL) {
+  if (_pipeline == nullptr) {
     _pipeline = Pipeline::get_render_pipeline();
   }
 
   _windows_sorted = true;
   _window_sort_index = 0;
-  _needs_open_windows = false;
 
   set_threading_model(GraphicsThreadingModel(threading_model));
   if (!_threading_model.is_default()) {
@@ -289,7 +291,7 @@ make_output(GraphicsPipe *pipe,
   if ((x_size == 0)&&(y_size == 0)) {
     flags |= GraphicsPipe::BF_size_track_host;
   }
-  if (host != 0) {
+  if (host != nullptr) {
     host = host->get_host();
   }
 
@@ -297,28 +299,28 @@ make_output(GraphicsPipe *pipe,
   // call open_windows to get both ready.  If that fails, give up on using the
   // supplied gsg and host.
 
-  if (host == (GraphicsOutput *)NULL) {
-    if (gsg != (GraphicsStateGuardian*)NULL) {
+  if (host == nullptr) {
+    if (gsg != nullptr) {
       if ((!gsg->is_valid())||(gsg->needs_reset())) {
         open_windows();
       }
       if ((!gsg->is_valid())||(gsg->needs_reset())) {
-        gsg = NULL;
+        gsg = nullptr;
       }
     }
   } else {
-    if ((host->get_gsg()==0)||
+    if ((host->get_gsg()==nullptr)||
         (!host->is_valid())||
         (!host->get_gsg()->is_valid())||
         (host->get_gsg()->needs_reset())) {
       open_windows();
     }
-    if ((host->get_gsg()==0)||
+    if ((host->get_gsg()==nullptr)||
         (!host->is_valid())||
         (!host->get_gsg()->is_valid())||
         (host->get_gsg()->needs_reset())) {
-      host = NULL;
-      gsg = NULL;
+      host = nullptr;
+      gsg = nullptr;
     } else {
       gsg = host->get_gsg();
     }
@@ -326,41 +328,38 @@ make_output(GraphicsPipe *pipe,
 
   // Sanity check everything.
 
-  GraphicsThreadingModel threading_model = get_threading_model();
-  nassertr(pipe != (GraphicsPipe *)NULL, NULL);
-  if (gsg != (GraphicsStateGuardian *)NULL) {
-    nassertr(pipe == gsg->get_pipe(), NULL);
-    nassertr(this == gsg->get_engine(), NULL);
-    nassertr(threading_model.get_draw_name() ==
-             gsg->get_threading_model().get_draw_name(), NULL);
+  nassertr(pipe != nullptr, nullptr);
+  if (gsg != nullptr) {
+    nassertr(pipe == gsg->get_pipe(), nullptr);
+    nassertr(this == gsg->get_engine(), nullptr);
   }
 
   // Are we really asking for a callback window?
   if ((flags & GraphicsPipe::BF_require_callback_window)!=0) {
     PT(GraphicsStateGuardian) this_gsg = gsg;
-    if (this_gsg == (GraphicsStateGuardian *)NULL) {
+    if (this_gsg == nullptr) {
       // If we don't already have a GSG, we have to ask the pipe to make a new
       // one, unencumbered by window dressing.
       this_gsg = pipe->make_callback_gsg(this);
     }
-    if (this_gsg != (GraphicsStateGuardian *)NULL) {
+    if (this_gsg != nullptr) {
       CallbackGraphicsWindow *window = new CallbackGraphicsWindow(this, pipe, name, fb_prop, win_prop, flags, this_gsg);
       window->_sort = sort;
-      do_add_window(window, threading_model);
-      do_add_gsg(window->get_gsg(), pipe, threading_model);
+      do_add_window(window);
+      do_add_gsg(window->get_gsg(), pipe);
       display_cat.info() << "Created output of type CallbackGraphicsWindow\n";
       return window;
     }
 
     // Couldn't make a callback window, because the pipe wouldn't make an
     // unencumbered GSG.
-    return NULL;
+    return nullptr;
   }
 
   // Determine if a parasite buffer meets the user's specs.
 
   bool can_use_parasite = false;
-  if ((host != 0)&&
+  if ((host != nullptr)&&
       ((flags&GraphicsPipe::BF_require_window)==0)&&
       ((flags&GraphicsPipe::BF_require_callback_window)==0)&&
       ((flags&GraphicsPipe::BF_refuse_parasite)==0)&&
@@ -386,8 +385,8 @@ make_output(GraphicsPipe *pipe,
       (host->get_fb_properties().subsumes(fb_prop))) {
     ParasiteBuffer *buffer = new ParasiteBuffer(host, name, x_size, y_size, flags);
     buffer->_sort = sort;
-    do_add_window(buffer, threading_model);
-    do_add_gsg(host->get_gsg(), pipe, threading_model);
+    do_add_window(buffer);
+    do_add_gsg(host->get_gsg(), pipe);
     display_cat.info() << "Created output of type ParasiteBuffer\n";
     return buffer;
   }
@@ -398,8 +397,8 @@ make_output(GraphicsPipe *pipe,
   if (force_parasite_buffer && can_use_parasite) {
     ParasiteBuffer *buffer = new ParasiteBuffer(host, name, x_size, y_size, flags);
     buffer->_sort = sort;
-    do_add_window(buffer, threading_model);
-    do_add_gsg(host->get_gsg(), pipe, threading_model);
+    do_add_window(buffer);
+    do_add_gsg(host->get_gsg(), pipe);
     display_cat.info() << "Created output of type ParasiteBuffer\n";
     return buffer;
   }
@@ -410,19 +409,17 @@ make_output(GraphicsPipe *pipe,
     bool precertify = false;
     PT(GraphicsOutput) window =
       pipe->make_output(name, fb_prop, win_prop, flags, this, gsg, host, retry, precertify);
-    if (window != (GraphicsOutput *)NULL) {
+    if (window != nullptr) {
       window->_sort = sort;
-      if ((precertify) && (gsg != 0) && (window->get_gsg()==gsg)) {
-        do_add_window(window, threading_model);
-        do_add_gsg(window->get_gsg(), pipe, threading_model);
+      if (precertify && gsg != nullptr && window->get_gsg() == gsg) {
+        do_add_window(window);
         display_cat.info()
           << "Created output of type " << window->get_type() << "\n";
         return window;
       }
-      do_add_window(window, threading_model);
+      do_add_window(window);
       open_windows();
       if (window->is_valid()) {
-        do_add_gsg(window->get_gsg(), pipe, threading_model);
         display_cat.info()
           << "Created output of type " << window->get_type() << "\n";
 
@@ -451,8 +448,7 @@ make_output(GraphicsPipe *pipe,
       }
 
       // No good; delete the window and keep trying.
-      bool removed = remove_window(window);
-      nassertr(removed, NULL);
+      remove_window(window);
     }
   }
 
@@ -462,15 +458,15 @@ make_output(GraphicsPipe *pipe,
   if (can_use_parasite) {
     ParasiteBuffer *buffer = new ParasiteBuffer(host, name, x_size, y_size, flags);
     buffer->_sort = sort;
-    do_add_window(buffer, threading_model);
-    do_add_gsg(host->get_gsg(), pipe, threading_model);
+    do_add_window(buffer);
+    do_add_gsg(host->get_gsg(), pipe);
     display_cat.info() << "Created output of type ParasiteBuffer\n";
     return buffer;
   }
 
   // Could not create a window to the user's specs.
 
-  return NULL;
+  return nullptr;
 }
 
 /**
@@ -479,30 +475,24 @@ make_output(GraphicsPipe *pipe,
  * shouldn't be called by user code as make_output normally does this under
  * the hood; it may be useful in esoteric cases in which a custom window
  * object is used.
+ *
+ * This can be called during the rendering loop, unlike make_output(); the
+ * window will be opened before the next frame begins rendering.  Because it
+ * doesn't call open_windows(), however, it's not guaranteed that the window
+ * will succeed opening even if it returns true.
  */
 bool GraphicsEngine::
 add_window(GraphicsOutput *window, int sort) {
-  nassertr(window != NULL, false);
-
-  GraphicsThreadingModel threading_model = get_threading_model();
+  nassertr(window != nullptr, false);
   nassertr(this == window->get_engine(), false);
 
   window->_sort = sort;
-  do_add_window(window, threading_model);
+  do_add_window(window);
 
-  open_windows();
-  if (window->is_valid()) {
-    do_add_gsg(window->get_gsg(), window->get_pipe(), threading_model);
+  display_cat.info()
+    << "Added output of type " << window->get_type() << "\n";
 
-    display_cat.info()
-      << "Added output of type " << window->get_type() << "\n";
-
-    return true;
-
-  } else {
-    remove_window(window);
-    return false;
-  }
+  return true;
 }
 
 /**
@@ -524,7 +514,7 @@ add_window(GraphicsOutput *window, int sort) {
  */
 bool GraphicsEngine::
 remove_window(GraphicsOutput *window) {
-  nassertr(window != NULL, false);
+  nassertr(window != nullptr, false);
   Thread *current_thread = Thread::get_current_thread();
 
   // First, make sure we know what this window is.
@@ -537,6 +527,17 @@ remove_window(GraphicsOutput *window) {
     }
     count = _windows.erase(ptwin);
   }
+
+  // Also check whether it is in _new_windows.
+  {
+    MutexHolder new_windows_holder(_new_windows_lock, current_thread);
+    size_t old_size = _new_windows.size();
+    _new_windows.erase(std::remove(_new_windows.begin(), _new_windows.end(), ptwin), _new_windows.end());
+    if (count == 0 && _new_windows.size() < old_size) {
+      count = 1;
+    }
+  }
+
   if (count == 0) {
     // Never heard of this window.  Do nothing.
     return false;
@@ -545,9 +546,9 @@ remove_window(GraphicsOutput *window) {
   do_remove_window(window, current_thread);
 
   GraphicsStateGuardian *gsg = window->get_gsg();
-  if (gsg != (GraphicsStateGuardian *)NULL) {
+  if (gsg != nullptr) {
     PreparedGraphicsObjects *pgo = gsg->get_prepared_objects();
-    if (pgo != (PreparedGraphicsObjects *)NULL) {
+    if (pgo != nullptr) {
       // Check to see if any other still-active windows share this context.
       bool any_common = false;
       {
@@ -555,7 +556,7 @@ remove_window(GraphicsOutput *window) {
         Windows::iterator wi;
         for (wi = _windows.begin(); wi != _windows.end() && !any_common; ++wi) {
           GraphicsStateGuardian *gsg2 = (*wi)->get_gsg();
-          if (gsg2 != (GraphicsStateGuardian *)NULL &&
+          if (gsg2 != nullptr &&
               gsg2->get_prepared_objects() == pgo) {
             any_common = true;
           }
@@ -584,6 +585,8 @@ void GraphicsEngine::
 remove_all_windows() {
   Thread *current_thread = Thread::get_current_thread();
 
+  ReMutexHolder holder(_lock, current_thread);
+
   // Let's move the _windows vector into a local copy first, and walk through
   // that local copy, just in case someone we call during the loop attempts to
   // modify _windows.  I don't know what code would be doing this, but it
@@ -591,14 +594,26 @@ remove_all_windows() {
   Windows old_windows;
   old_windows.swap(_windows);
   Windows::iterator wi;
-  for (wi = old_windows.begin(); wi != old_windows.end(); ++wi) {
-    GraphicsOutput *win = (*wi);
-    nassertv(win != NULL);
+  for (GraphicsOutput *win : old_windows) {
+    nassertv(win != nullptr);
     do_remove_window(win, current_thread);
     GraphicsStateGuardian *gsg = win->get_gsg();
-    if (gsg != (GraphicsStateGuardian *)NULL) {
+    if (gsg != nullptr) {
       gsg->release_all();
     }
+  }
+
+  {
+    MutexHolder new_windows_holder(_new_windows_lock, current_thread);
+    for (GraphicsOutput *win : _new_windows) {
+      nassertv(win != nullptr);
+      do_remove_window(win, current_thread);
+      GraphicsStateGuardian *gsg = win->get_gsg();
+      if (gsg != nullptr) {
+        gsg->release_all();
+      }
+    }
+    _new_windows.clear();
   }
 
   _app.do_close(this, current_thread);
@@ -664,7 +679,7 @@ get_num_windows() const {
  */
 GraphicsOutput *GraphicsEngine::
 get_window(int n) const {
-  nassertr(n >= 0 && n < (int)_windows.size(), NULL);
+  nassertr(n >= 0 && n < (int)_windows.size(), nullptr);
 
   if (!_windows_sorted) {
     ((GraphicsEngine *)this)->do_resort_windows();
@@ -694,14 +709,12 @@ render_frame() {
   }
 #endif
 
-  if (_needs_open_windows) {
-    // Make sure our buffers and windows are fully realized before we render a
-    // frame.  We do this particularly to realize our offscreen buffers, so
-    // that we don't render a frame before the offscreen buffers are ready
-    // (which might result in a frame going by without some textures having
-    // been rendered).
-    open_windows();
-  }
+  // Make sure our buffers and windows are fully realized before we render a
+  // frame.  We do this particularly to realize our offscreen buffers, so
+  // that we don't render a frame before the offscreen buffers are ready
+  // (which might result in a frame going by without some textures having
+  // been rendered).
+  open_windows();
 
   ClockObject *global_clock = ClockObject::get_global_clock();
 
@@ -727,7 +740,7 @@ render_frame() {
     Windows::iterator wi;
     for (wi = _windows.begin(); wi != _windows.end(); ++wi) {
       GraphicsOutput *win = (*wi);
-      nassertv(win != NULL);
+      nassertv(win != nullptr);
       if (win->get_delete_flag()) {
         do_remove_window(win, current_thread);
 
@@ -741,8 +754,8 @@ render_frame() {
         // frames, so we won't have to recompute it each frame.
         int num_drs = win->get_num_active_display_regions();
         for (int i = 0; i < num_drs; ++i) {
-          DisplayRegion *dr = win->get_active_display_region(i);
-          if (dr != (DisplayRegion *)NULL) {
+          PT(DisplayRegion) dr = win->get_active_display_region(i);
+          if (dr != nullptr) {
             NodePath camera_np = dr->get_camera(current_thread);
             if (!camera_np.is_empty()) {
               Camera *camera = DCAST(Camera, camera_np.node());
@@ -862,8 +875,8 @@ render_frame() {
     _test_sphere_pcollector.clear_level();
     _volume_box_pcollector.clear_level();
     _test_box_pcollector.clear_level();
-    _volume_tube_pcollector.clear_level();
-    _test_tube_pcollector.clear_level();
+    _volume_capsule_pcollector.clear_level();
+    _test_capsule_pcollector.clear_level();
     _volume_inv_sphere_pcollector.clear_level();
     _test_inv_sphere_pcollector.clear_level();
     _volume_geom_pcollector.clear_level();
@@ -945,9 +958,57 @@ open_windows() {
 
   ReMutexHolder holder(_lock, current_thread);
 
-  if (!_windows_sorted) {
-    do_resort_windows();
+  pvector<PT(GraphicsOutput)> new_windows;
+  {
+    MutexHolder new_windows_holder(_new_windows_lock, current_thread);
+    if (_new_windows.empty()) {
+      return;
+    }
+
+    for (auto it = _new_windows.begin(); it != _new_windows.end(); ++it) {
+      GraphicsOutput *window = *it;
+
+      WindowRenderer *cull =
+        get_window_renderer(_threading_model.get_cull_name(),
+                            _threading_model.get_cull_stage());
+      WindowRenderer *draw =
+        get_window_renderer(_threading_model.get_draw_name(),
+                            _threading_model.get_draw_stage());
+
+      if (_threading_model.get_cull_sorting()) {
+        cull->add_window(cull->_cull, window);
+        draw->add_window(draw->_draw, window);
+      } else {
+        cull->add_window(cull->_cdraw, window);
+      }
+
+      // Ask the pipe which thread it prefers to run its windowing commands in
+      // (the "window thread").  This is the thread that handles the commands
+      // to open, resize, etc.  the window.  X requires this to be done in the
+      // app thread (along with all the other windows, since X is strictly
+      // single-threaded), but Windows requires this to be done in draw
+      // (because once an OpenGL context has been bound in a given thread, it
+      // cannot subsequently be bound in any other thread, and we have to bind
+      // a context in open_window()).
+
+      switch (window->get_pipe()->get_preferred_window_thread()) {
+      case GraphicsPipe::PWT_app:
+        _app.add_window(_app._window, window);
+        break;
+
+      case GraphicsPipe::PWT_draw:
+        draw->add_window(draw->_window, window);
+        break;
+      }
+
+      _windows.push_back(window);
+    }
+
+    // Steal the list, since remove_window() may remove from _new_windows.
+    new_windows.swap(_new_windows);
   }
+
+  do_resort_windows();
 
   // We do it twice, to allow both cull and draw to process the window.
   for (int i = 0; i < 2; ++i) {
@@ -970,7 +1031,15 @@ open_windows() {
     }
   }
 
-  _needs_open_windows = false;
+  // Now go through the list again to check whether they opened successfully.
+  for (auto it = new_windows.begin(); it != new_windows.end(); ++it) {
+    GraphicsOutput *window = *it;
+    if (window->is_valid()) {
+      do_add_gsg(window->get_gsg(), window->get_pipe());
+    } else {
+      remove_window(window);
+    }
+  }
 }
 
 /**
@@ -1060,17 +1129,34 @@ extract_texture_data(Texture *tex, GraphicsStateGuardian *gsg) {
     // has finished its current task.
     WindowRenderer *wr = get_window_renderer(draw_name, 0);
     RenderThread *thread = (RenderThread *)wr;
-    MutexHolder holder2(thread->_cv_mutex);
+    MutexHolder cv_holder(thread->_cv_mutex);
 
     while (thread->_thread_state != TS_wait) {
       thread->_cv_done.wait();
     }
 
-    // OK, now the draw thread is idle.  That's really good enough for our
-    // purposes; we don't *actually* need to make the draw thread do the work
-    // --it's sufficient that it's not doing anything else while we access the
-    // GSG.
-    return gsg->extract_texture_data(tex);
+    // Temporarily set this so that it accesses data from the current thread.
+    int pipeline_stage = Thread::get_current_pipeline_stage();
+    int draw_pipeline_stage = thread->get_pipeline_stage();
+    thread->set_pipeline_stage(pipeline_stage);
+
+    // Now that the draw thread is idle, signal it to do the extraction task.
+    thread->_gsg = gsg;
+    thread->_texture = tex;
+    thread->_thread_state = TS_do_extract;
+    thread->_cv_start.notify();
+    thread->_cv_mutex.release();
+    thread->_cv_mutex.acquire();
+
+    //XXX is this necessary, or is acquiring the mutex enough?
+    while (thread->_thread_state != TS_wait) {
+      thread->_cv_done.wait();
+    }
+
+    thread->set_pipeline_stage(draw_pipeline_stage);
+    thread->_gsg = nullptr;
+    thread->_texture = nullptr;
+    return thread->_result;
   }
 }
 
@@ -1089,7 +1175,9 @@ extract_texture_data(Texture *tex, GraphicsStateGuardian *gsg) {
  */
 void GraphicsEngine::
 dispatch_compute(const LVecBase3i &work_groups, const ShaderAttrib *sattr, GraphicsStateGuardian *gsg) {
-  nassertv(sattr->get_shader() != (Shader *)NULL);
+  const Shader *shader = sattr->get_shader();
+  nassertv(shader != nullptr);
+  nassertv(gsg != nullptr);
 
   ReMutexHolder holder(_lock);
 
@@ -1098,26 +1186,45 @@ dispatch_compute(const LVecBase3i &work_groups, const ShaderAttrib *sattr, Graph
   string draw_name = gsg->get_threading_model().get_draw_name();
   if (draw_name.empty()) {
     // A single-threaded environment.  No problem.
+    gsg->push_group_marker(std::string("Compute ") + shader->get_filename(Shader::ST_compute).get_basename());
+    gsg->set_state_and_transform(state, TransformState::make_identity());
+    gsg->dispatch_compute(work_groups[0], work_groups[1], work_groups[2]);
+    gsg->pop_group_marker();
 
   } else {
     // A multi-threaded environment.  We have to wait until the draw thread
     // has finished its current task.
     WindowRenderer *wr = get_window_renderer(draw_name, 0);
     RenderThread *thread = (RenderThread *)wr;
-    MutexHolder holder2(thread->_cv_mutex);
+    MutexHolder cv_holder(thread->_cv_mutex);
 
     while (thread->_thread_state != TS_wait) {
       thread->_cv_done.wait();
     }
 
-    // OK, now the draw thread is idle.  That's really good enough for our
-    // purposes; we don't *actually* need to make the draw thread do the work
-    // --it's sufficient that it's not doing anything else while we access the
-    // GSG.
-  }
+    // Temporarily set this so that it accesses data from the current thread.
+    int pipeline_stage = Thread::get_current_pipeline_stage();
+    int draw_pipeline_stage = thread->get_pipeline_stage();
+    thread->set_pipeline_stage(pipeline_stage);
 
-  gsg->set_state_and_transform(state, TransformState::make_identity());
-  gsg->dispatch_compute(work_groups[0], work_groups[1], work_groups[2]);
+    // Now that the draw thread is idle, signal it to do the compute task.
+    thread->_gsg = gsg;
+    thread->_state = state.p();
+    thread->_work_groups = work_groups;
+    thread->_thread_state = TS_do_compute;
+    thread->_cv_start.notify();
+    thread->_cv_mutex.release();
+    thread->_cv_mutex.acquire();
+
+    //XXX is this necessary, or is acquiring the mutex enough?
+    while (thread->_thread_state != TS_wait) {
+      thread->_cv_done.wait();
+    }
+
+    thread->set_pipeline_stage(draw_pipeline_stage);
+    thread->_gsg = nullptr;
+    thread->_state = nullptr;
+  }
 }
 
 /**
@@ -1125,7 +1232,7 @@ dispatch_compute(const LVecBase3i &work_groups, const ShaderAttrib *sattr, Graph
  */
 GraphicsEngine *GraphicsEngine::
 get_global_ptr() {
-  if (_global_ptr == NULL) {
+  if (_global_ptr == nullptr) {
     _global_ptr = new GraphicsEngine;
     PandaNode::set_scene_root_func(&scene_root_func);
   }
@@ -1154,6 +1261,43 @@ texture_uploaded(Texture *tex) {
 }
 
 /**
+ * Called by DisplayRegion::do_get_screenshot
+ */
+PT(Texture) GraphicsEngine::
+do_get_screenshot(DisplayRegion *region, GraphicsStateGuardian *gsg) {
+  // A multi-threaded environment.  We have to wait until the draw thread
+  // has finished its current task.
+
+  ReMutexHolder holder(_lock);
+
+  const std::string &draw_name = gsg->get_threading_model().get_draw_name();
+  WindowRenderer *wr = get_window_renderer(draw_name, 0);
+  RenderThread *thread = (RenderThread *)wr;
+  MutexHolder cv_holder(thread->_cv_mutex);
+
+  while (thread->_thread_state != TS_wait) {
+    thread->_cv_done.wait();
+  }
+
+  // Now that the draw thread is idle, signal it to do the extraction task.
+  thread->_region = region;
+  thread->_thread_state = TS_do_screenshot;
+  thread->_cv_start.notify();
+  thread->_cv_mutex.release();
+  thread->_cv_mutex.acquire();
+
+  //XXX is this necessary, or is acquiring the mutex enough?
+  while (thread->_thread_state != TS_wait) {
+    thread->_cv_done.wait();
+  }
+
+  PT(Texture) tex = std::move(thread->_texture);
+  thread->_region = nullptr;
+  thread->_texture = nullptr;
+  return tex;
+}
+
+/**
  * Fires off a cull traversal using the indicated camera.
  */
 void GraphicsEngine::
@@ -1166,7 +1310,7 @@ do_cull(CullHandler *cull_handler, SceneSetup *scene_setup,
   trav->set_cull_handler(cull_handler);
   trav->set_scene(scene_setup, gsg, dr->get_incomplete_render());
 
-  trav->set_view_frustum(NULL);
+  trav->set_view_frustum(nullptr);
   if (view_frustum_cull) {
     // If we're to be performing view-frustum culling, determine the bounding
     // volume associated with the current viewing frustum.
@@ -1175,8 +1319,8 @@ do_cull(CullHandler *cull_handler, SceneSetup *scene_setup,
     // lens.
     PT(BoundingVolume) bv = scene_setup->get_cull_bounds();
 
-    if (bv != (BoundingVolume *)NULL && !bv->is_infinite() &&
-        bv->as_geometric_bounding_volume() != NULL) {
+    if (bv != nullptr && !bv->is_infinite() &&
+        bv->as_geometric_bounding_volume() != nullptr) {
       // Transform it into the appropriate coordinate space.
       PT(GeometricBoundingVolume) local_frustum;
       local_frustum = bv->make_copy()->as_geometric_bounding_volume();
@@ -1219,8 +1363,8 @@ is_scene_root(const PandaNode *node) {
     if (win->is_active() && win->get_gsg()->is_active()) {
       int num_display_regions = win->get_num_active_display_regions();
       for (int i = 0; i < num_display_regions; i++) {
-        DisplayRegion *dr = win->get_active_display_region(i);
-        if (dr != (DisplayRegion *)NULL) {
+        PT(DisplayRegion) dr = win->get_active_display_region(i);
+        if (dr != nullptr) {
           NodePath camera = dr->get_camera();
           if (camera.is_empty()) {
             continue;
@@ -1271,7 +1415,7 @@ set_window_sort(GraphicsOutput *window, int sort) {
  * model begins with the "-" character.
  */
 void GraphicsEngine::
-cull_and_draw_together(const GraphicsEngine::Windows &wlist,
+cull_and_draw_together(GraphicsEngine::Windows wlist,
                        Thread *current_thread) {
   PStatTimer timer(_cull_pcollector, current_thread);
 
@@ -1291,12 +1435,18 @@ cull_and_draw_together(const GraphicsEngine::Windows &wlist,
       }
 
       if (win->begin_frame(GraphicsOutput::FM_render, current_thread)) {
-        win->clear(current_thread);
+        if (win->is_any_clear_active()) {
+          GraphicsStateGuardian *gsg = win->get_gsg();
+          PStatGPUTimer timer(gsg, win->get_clear_window_pcollector(), current_thread);
+          gsg->push_group_marker("Clear");
+          win->clear(current_thread);
+          gsg->pop_group_marker();
+        }
 
         int num_display_regions = win->get_num_active_display_regions();
         for (int i = 0; i < num_display_regions; i++) {
-          DisplayRegion *dr = win->get_active_display_region(i);
-          if (dr != (DisplayRegion *)NULL) {
+          PT(DisplayRegion) dr = win->get_active_display_region(i);
+          if (dr != nullptr) {
             cull_and_draw_together(win, dr, current_thread);
           }
         }
@@ -1326,7 +1476,9 @@ void GraphicsEngine::
 cull_and_draw_together(GraphicsOutput *win, DisplayRegion *dr,
                        Thread *current_thread) {
   GraphicsStateGuardian *gsg = win->get_gsg();
-  nassertv(gsg != (GraphicsStateGuardian *)NULL);
+  nassertv(gsg != nullptr);
+
+  gsg->push_group_marker(dr->get_debug_name());
 
   PT(SceneSetup) scene_setup;
 
@@ -1336,13 +1488,14 @@ cull_and_draw_together(GraphicsOutput *win, DisplayRegion *dr,
     gsg->prepare_display_region(&dr_reader);
 
     if (dr_reader.is_any_clear_active()) {
+      PStatGPUTimer timer(gsg, win->get_clear_window_pcollector(), current_thread);
       gsg->clear(dr);
     }
 
     scene_setup = setup_scene(gsg, &dr_reader);
   }
 
-  if (scene_setup == (SceneSetup *)NULL) {
+  if (scene_setup == nullptr) {
     // Never mind.
 
   } else if (dr->is_stereo()) {
@@ -1357,7 +1510,7 @@ cull_and_draw_together(GraphicsOutput *win, DisplayRegion *dr,
     DrawCullHandler cull_handler(gsg);
     if (gsg->begin_scene()) {
       CallbackObject *cbobj = dr->get_cull_callback();
-      if (cbobj != (CallbackObject *)NULL) {
+      if (cbobj != nullptr) {
         // Issue the cull callback on this DisplayRegion.
         DisplayRegionCullCallbackData cbdata(&cull_handler, scene_setup);
         cbobj->do_callback(&cbdata);
@@ -1372,6 +1525,8 @@ cull_and_draw_together(GraphicsOutput *win, DisplayRegion *dr,
       gsg->end_scene();
     }
   }
+
+  gsg->pop_group_marker();
 }
 
 /**
@@ -1380,7 +1535,7 @@ cull_and_draw_together(GraphicsOutput *win, DisplayRegion *dr,
  * drawing.
  */
 void GraphicsEngine::
-cull_to_bins(const GraphicsEngine::Windows &wlist, Thread *current_thread) {
+cull_to_bins(GraphicsEngine::Windows wlist, Thread *current_thread) {
   PStatTimer timer(_cull_pcollector, current_thread);
 
   _singular_warning_last_frame = _singular_warning_this_frame;
@@ -1399,7 +1554,7 @@ cull_to_bins(const GraphicsEngine::Windows &wlist, Thread *current_thread) {
       PStatTimer timer(win->get_cull_window_pcollector(), current_thread);
       int num_display_regions = win->get_num_active_display_regions();
       for (int i = 0; i < num_display_regions; ++i) {
-        DisplayRegion *dr = win->get_active_display_region(i);
+        PT(DisplayRegion) dr = win->get_active_display_region(i);
         if (dr != nullptr) {
           PT(SceneSetup) scene_setup;
           PT(CullResult) cull_result;
@@ -1417,7 +1572,7 @@ cull_to_bins(const GraphicsEngine::Windows &wlist, Thread *current_thread) {
             key._lens_index = dr_reader.get_lens_index();
           }
 
-          AlreadyCulled::iterator aci = already_culled.insert(AlreadyCulled::value_type(move(key), nullptr)).first;
+          AlreadyCulled::iterator aci = already_culled.insert(AlreadyCulled::value_type(std::move(key), nullptr)).first;
           if ((*aci).second == nullptr) {
             // We have not used this camera already in this thread.  Perform
             // the cull operation.
@@ -1443,7 +1598,7 @@ cull_to_bins(const GraphicsEngine::Windows &wlist, Thread *current_thread) {
           }
 
           // Save the results for next frame.
-          dr->set_cull_result(MOVE(cull_result), MOVE(scene_setup), current_thread);
+          dr->set_cull_result(std::move(cull_result), MOVE(scene_setup), current_thread);
         }
       }
     }
@@ -1460,7 +1615,7 @@ cull_to_bins(GraphicsOutput *win, GraphicsStateGuardian *gsg,
 
   BinCullHandler cull_handler(cull_result);
   CallbackObject *cbobj = dr->get_cull_callback();
-  if (cbobj != (CallbackObject *)NULL) {
+  if (cbobj != nullptr) {
     // Issue the cull callback on this DisplayRegion.
     DisplayRegionCullCallbackData cbdata(&cull_handler, scene_setup);
     cbobj->do_callback(&cbdata);
@@ -1511,7 +1666,12 @@ draw_bins(const GraphicsEngine::Windows &wlist, Thread *current_thread) {
         // a current context for PStatGPUTimer to work.
         {
           PStatGPUTimer timer(gsg, win->get_draw_window_pcollector(), current_thread);
-          win->clear(current_thread);
+          if (win->is_any_clear_active()) {
+            PStatGPUTimer timer(gsg, win->get_clear_window_pcollector(), current_thread);
+            win->get_gsg()->push_group_marker("Clear");
+            win->clear(current_thread);
+            win->get_gsg()->pop_group_marker();
+          }
 
           if (display_cat.is_spam()) {
             display_cat.spam()
@@ -1519,8 +1679,8 @@ draw_bins(const GraphicsEngine::Windows &wlist, Thread *current_thread) {
           }
           int num_display_regions = win->get_num_active_display_regions();
           for (int i = 0; i < num_display_regions; ++i) {
-            DisplayRegion *dr = win->get_active_display_region(i);
-            if (dr != (DisplayRegion *)NULL) {
+            PT(DisplayRegion) dr = win->get_active_display_region(i);
+            if (dr != nullptr) {
               do_draw(win, gsg, dr, current_thread);
             }
           }
@@ -1753,28 +1913,28 @@ setup_scene(GraphicsStateGuardian *gsg, DisplayRegionPipelineReader *dr) {
   GraphicsOutput *window = dr->get_window();
   // The window pointer shouldn't be NULL, since we presumably got to this
   // particular DisplayRegion by walking through a list on a window.
-  nassertr(window != (GraphicsOutput *)NULL, NULL);
+  nassertr(window != nullptr, nullptr);
 
   NodePath camera = dr->get_camera();
   if (camera.is_empty()) {
     // No camera, no draw.
-    return NULL;
+    return nullptr;
   }
 
   Camera *camera_node;
-  DCAST_INTO_R(camera_node, camera.node(), NULL);
+  DCAST_INTO_R(camera_node, camera.node(), nullptr);
 
   if (!camera_node->is_active()) {
     // Camera inactive, no draw.
-    return NULL;
+    return nullptr;
   }
   camera_node->cleanup_aux_scene_data(current_thread);
 
   int lens_index = dr->get_lens_index();
   Lens *lens = camera_node->get_lens(lens_index);
-  if (lens == (Lens *)NULL || !camera_node->get_lens_active(lens_index)) {
+  if (lens == nullptr || !camera_node->get_lens_active(lens_index)) {
     // No lens, no draw.
-    return NULL;
+    return nullptr;
   }
 
   NodePath scene_root = camera_node->get_scene();
@@ -1806,7 +1966,7 @@ setup_scene(GraphicsStateGuardian *gsg, DisplayRegionPipelineReader *dr) {
         << scene_root.get_scale(NodePath()) << "); cannot render.\n";
       _singular_warning_this_frame = true;
     }
-    return NULL;
+    return nullptr;
   }
 
   if (world_transform->is_invalid()) {
@@ -1817,7 +1977,7 @@ setup_scene(GraphicsStateGuardian *gsg, DisplayRegionPipelineReader *dr) {
         << camera.get_scale(NodePath()) << "); cannot render.\n";
     }
     _singular_warning_this_frame = true;
-    return NULL;
+    return nullptr;
   }
 
   CPT(RenderState) initial_state = camera_node->get_initial_state();
@@ -1849,16 +2009,6 @@ setup_scene(GraphicsStateGuardian *gsg, DisplayRegionPipelineReader *dr) {
   CPT(TransformState) cs_world_transform = cs_transform->compose(world_transform);
   scene_setup->set_cs_world_transform(cs_world_transform);
 
-  // Make sure that the GSG has a ShaderGenerator for the munger to use.  We
-  // have to do this here because the ShaderGenerator needs a host window
-  // pointer.  Hopefully we'll be able to eliminate that requirement in the
-  // future.
-#ifdef HAVE_CG
-  if (gsg->get_shader_generator() == NULL) {
-    gsg->set_shader_generator(new ShaderGenerator(gsg, window));
-  }
-#endif
-
   return scene_setup;
 }
 
@@ -1869,6 +2019,8 @@ void GraphicsEngine::
 do_draw(GraphicsOutput *win, GraphicsStateGuardian *gsg, DisplayRegion *dr, Thread *current_thread) {
   // Statistics
   PStatGPUTimer timer(gsg, dr->get_draw_region_pcollector(), current_thread);
+
+  gsg->push_group_marker(dr->get_debug_name());
 
   PT(CullResult) cull_result;
   PT(SceneSetup) scene_setup;
@@ -1885,18 +2037,22 @@ do_draw(GraphicsOutput *win, GraphicsStateGuardian *gsg, DisplayRegion *dr, Thre
     win->change_scenes(&dr_reader);
     gsg->prepare_display_region(&dr_reader);
     if (dr_reader.is_any_clear_active()) {
+      PStatGPUTimer timer(gsg, win->get_clear_window_pcollector(), current_thread);
       gsg->clear(dr_reader.get_object());
     }
 
     cbobj = dr_reader.get_draw_callback();
   }
 
-  if (cbobj != (CallbackObject *)NULL) {
+  if (cbobj != nullptr) {
     // Issue the draw callback on this DisplayRegion.
 
-    // Set the GSG to the initial state.
+    // Set the GSG to the initial state.  We disable depth testing since that
+    // is the default OpenGL state, and some libraries (eg. Kivy) expect that.
+    static CPT(RenderState) state = RenderState::make(
+      DepthTestAttrib::make(DepthTestAttrib::M_none));
     gsg->clear_before_callback();
-    gsg->set_state_and_transform(RenderState::make_empty(), TransformState::make_identity());
+    gsg->set_state_and_transform(state, TransformState::make_identity());
 
     DisplayRegionDrawCallbackData cbdata(cull_result, scene_setup);
     cbobj->do_callback(&cbdata);
@@ -1904,11 +2060,7 @@ do_draw(GraphicsOutput *win, GraphicsStateGuardian *gsg, DisplayRegion *dr, Thre
     // We don't trust the state the callback may have left us in.
     gsg->clear_state_and_transform();
 
-    // The callback has taken care of the drawing.
-    return;
-  }
-
-  if (cull_result == NULL || scene_setup == NULL) {
+  } else if (cull_result == nullptr || scene_setup == nullptr) {
     // Nothing to see here.
 
   } else if (dr->is_stereo()) {
@@ -1929,6 +2081,8 @@ do_draw(GraphicsOutput *win, GraphicsStateGuardian *gsg, DisplayRegion *dr, Thre
       gsg->end_scene();
     }
   }
+
+  gsg->pop_group_marker();
 }
 
 /**
@@ -1937,10 +2091,10 @@ do_draw(GraphicsOutput *win, GraphicsStateGuardian *gsg, DisplayRegion *dr, Thre
  * list of windows, and to request that the window be opened.
  */
 void GraphicsEngine::
-do_add_window(GraphicsOutput *window,
-              const GraphicsThreadingModel &threading_model) {
-  nassertv(window != NULL);
-  ReMutexHolder holder(_lock);
+do_add_window(GraphicsOutput *window) {
+  nassertv(window != nullptr);
+
+  MutexHolder holder(_new_windows_lock);
   nassertv(window->get_engine() == this);
 
   // We have a special counter that is unique per window that allows us to
@@ -1948,50 +2102,13 @@ do_add_window(GraphicsOutput *window,
   window->_internal_sort_index = _window_sort_index;
   ++_window_sort_index;
 
-  _windows_sorted = false;
-  _windows.push_back(window);
-
-  WindowRenderer *cull =
-    get_window_renderer(threading_model.get_cull_name(),
-                        threading_model.get_cull_stage());
-  WindowRenderer *draw =
-    get_window_renderer(threading_model.get_draw_name(),
-                        threading_model.get_draw_stage());
-
-  if (threading_model.get_cull_sorting()) {
-    cull->add_window(cull->_cull, window);
-    draw->add_window(draw->_draw, window);
-  } else {
-    cull->add_window(cull->_cdraw, window);
-  }
-
-/*
- * Ask the pipe which thread it prefers to run its windowing commands in (the
- * "window thread").  This is the thread that handles the commands to open,
- * resize, etc.  the window.  X requires this to be done in the app thread
- * (along with all the other windows, since X is strictly single-threaded),
- * but Windows requires this to be done in draw (because once an OpenGL
- * context has been bound in a given thread, it cannot subsequently be bound
- * in any other thread, and we have to bind a context in open_window()).
- */
-
-  switch (window->get_pipe()->get_preferred_window_thread()) {
-  case GraphicsPipe::PWT_app:
-    _app.add_window(_app._window, window);
-    break;
-
-  case GraphicsPipe::PWT_draw:
-    draw->add_window(draw->_window, window);
-    break;
-  }
-
   if (display_cat.is_debug()) {
     display_cat.debug()
       << "Created " << window->get_type() << " " << (void *)window << "\n";
   }
 
   window->request_open();
-  _needs_open_windows = true;
+  _new_windows.push_back(window);
 }
 
 /**
@@ -2000,13 +2117,12 @@ do_add_window(GraphicsOutput *window,
  * variables based on the gsg's capabilities.
  */
 void GraphicsEngine::
-do_add_gsg(GraphicsStateGuardian *gsg, GraphicsPipe *pipe,
-           const GraphicsThreadingModel &threading_model) {
-  nassertv(gsg != NULL);
+do_add_gsg(GraphicsStateGuardian *gsg, GraphicsPipe *pipe) {
+  nassertv(gsg != nullptr);
 
   ReMutexHolder holder(_lock);
   nassertv(gsg->get_pipe() == pipe && gsg->get_engine() == this);
-  gsg->_threading_model = threading_model;
+  gsg->_threading_model = _threading_model;
   if (!_default_loader.is_null()) {
     gsg->set_loader(_default_loader);
   }
@@ -2014,8 +2130,8 @@ do_add_gsg(GraphicsStateGuardian *gsg, GraphicsPipe *pipe,
   auto_adjust_capabilities(gsg);
 
   WindowRenderer *draw =
-    get_window_renderer(threading_model.get_draw_name(),
-                        threading_model.get_draw_stage());
+    get_window_renderer(_threading_model.get_draw_name(),
+                        _threading_model.get_draw_stage());
 
   draw->add_gsg(gsg);
 }
@@ -2027,7 +2143,7 @@ do_add_gsg(GraphicsStateGuardian *gsg, GraphicsPipe *pipe,
  */
 void GraphicsEngine::
 do_remove_window(GraphicsOutput *window, Thread *current_thread) {
-  nassertv(window != NULL);
+  nassertv(window != nullptr);
   PT(GraphicsPipe) pipe = window->get_pipe();
   window->clear_pipe();
 
@@ -2238,8 +2354,8 @@ const RenderState *GraphicsEngine::
 get_invert_polygon_state() {
   // Once someone asks for this pointer, we hold its reference count and never
   // free it.
-  static CPT(RenderState) state = (const RenderState *)NULL;
-  if (state == (const RenderState *)NULL) {
+  static CPT(RenderState) state = nullptr;
+  if (state == nullptr) {
     state = RenderState::make(CullFaceAttrib::make_reverse());
   }
 
@@ -2256,7 +2372,7 @@ get_invert_polygon_state() {
  */
 GraphicsEngine::WindowRenderer *GraphicsEngine::
 get_window_renderer(const string &name, int pipeline_stage) {
-  nassertr(_lock.debug_is_locked(), NULL);
+  nassertr(_lock.debug_is_locked(), nullptr);
 
   if (name.empty()) {
     return &_app;
@@ -2315,7 +2431,7 @@ add_window(Windows &wlist, GraphicsOutput *window) {
  */
 void GraphicsEngine::WindowRenderer::
 remove_window(GraphicsOutput *window) {
-  nassertv(window != NULL);
+  nassertv(window != nullptr);
   LightReMutexHolder holder(_wl_lock);
   PT(GraphicsOutput) ptwin = window;
 
@@ -2572,6 +2688,28 @@ thread_main() {
     case TS_do_windows:
       do_windows(_engine, current_thread);
       do_pending(_engine, current_thread);
+      break;
+
+    case TS_do_compute:
+      nassertd(_gsg != nullptr && _state != nullptr) break;
+      {
+        const ShaderAttrib *sattr;
+        _state->get_attrib(sattr);
+        _gsg->push_group_marker(std::string("Compute ") + sattr->get_shader()->get_filename(Shader::ST_compute).get_basename());
+        _gsg->set_state_and_transform(_state, TransformState::make_identity());
+        _gsg->dispatch_compute(_work_groups[0], _work_groups[1], _work_groups[2]);
+        _gsg->pop_group_marker();
+      }
+      break;
+
+    case TS_do_extract:
+      nassertd(_gsg != nullptr && _texture != nullptr) break;
+      _result = _gsg->extract_texture_data(_texture);
+      break;
+
+    case TS_do_screenshot:
+      nassertd(_region != nullptr) break;
+      _texture = _region->get_screenshot();
       break;
 
     case TS_terminate:

@@ -14,6 +14,8 @@
 #include "load_dso.h"
 #include "executionEnvironment.h"
 
+using std::string;
+
 static Filename resolve_dso(const DSearchPath &path, const Filename &filename) {
   if (filename.is_local()) {
     if ((path.get_num_directories()==1)&&(path.get_directory(0)=="<auto>")) {
@@ -45,22 +47,22 @@ void *
 load_dso(const DSearchPath &path, const Filename &filename) {
   Filename abspath = resolve_dso(path, filename);
   if (!abspath.is_regular_file()) {
-    return NULL;
+    return nullptr;
   }
-  string os_specific = abspath.to_os_specific();
+  std::wstring os_specific_w = abspath.to_os_specific_w();
 
   // Try using LoadLibraryEx, if possible.
-  typedef HMODULE (WINAPI *tLoadLibraryEx)(LPCTSTR, HANDLE, DWORD);
+  typedef HMODULE (WINAPI *tLoadLibraryEx)(LPCWSTR, HANDLE, DWORD);
   tLoadLibraryEx pLoadLibraryEx;
   HINSTANCE hLib = LoadLibrary("kernel32.dll");
   if (hLib) {
-    pLoadLibraryEx = (tLoadLibraryEx)GetProcAddress(hLib, "LoadLibraryExA");
+    pLoadLibraryEx = (tLoadLibraryEx)GetProcAddress(hLib, "LoadLibraryExW");
     if (pLoadLibraryEx) {
-      return pLoadLibraryEx(os_specific.c_str(), NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+      return pLoadLibraryEx(os_specific_w.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
     }
   }
 
-  return LoadLibrary(os_specific.c_str());
+  return LoadLibraryW(os_specific_w.c_str());
 }
 
 bool
@@ -104,7 +106,7 @@ load_dso_error() {
   }
 
   // Some unknown error code.
-  ostringstream errmsg;
+  std::ostringstream errmsg;
   errmsg << "Unknown error " << last_error;
   return errmsg.str();
 }
@@ -130,7 +132,7 @@ void *
 load_dso(const DSearchPath &path, const Filename &filename) {
   Filename abspath = resolve_dso(path, filename);
   if (!abspath.is_regular_file()) {
-    return NULL;
+    return nullptr;
   }
   string os_specific = abspath.to_os_specific();
   return dlopen(os_specific.c_str(), RTLD_NOW | RTLD_GLOBAL);
@@ -144,7 +146,7 @@ unload_dso(void *dso_handle) {
 string
 load_dso_error() {
    const char *message = dlerror();
-   if (message != (const char *)NULL) {
+   if (message != nullptr) {
     return std::string(message);
   }
   return "No error.";

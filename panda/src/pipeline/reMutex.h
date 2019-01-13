@@ -35,13 +35,13 @@ class EXPCL_PANDA_PIPELINE ReMutex : public ReMutexDirect
 PUBLISHED:
   INLINE ReMutex();
 public:
-  INLINE ReMutex(const char *name);
+  INLINE explicit ReMutex(const char *name);
 PUBLISHED:
-  INLINE ReMutex(const string &name);
-  INLINE ~ReMutex();
-private:
-  INLINE ReMutex(const ReMutex &copy);
-  INLINE void operator = (const ReMutex &copy);
+  INLINE explicit ReMutex(const std::string &name);
+  ReMutex(const ReMutex &copy) = delete;
+  ~ReMutex() = default;
+
+  void operator = (const ReMutex &copy) = delete;
 };
 
 #include "reMutex.I"

@@ -26,8 +26,8 @@
  */
 class EXPCL_PANDA_COLLIDE CollisionInvSphere : public CollisionSphere {
 PUBLISHED:
-  INLINE CollisionInvSphere(const LPoint3 &center, PN_stdfloat radius);
-  INLINE CollisionInvSphere(PN_stdfloat cx, PN_stdfloat cy, PN_stdfloat cz, PN_stdfloat radius);
+  INLINE explicit CollisionInvSphere(const LPoint3 &center, PN_stdfloat radius);
+  INLINE explicit CollisionInvSphere(PN_stdfloat cx, PN_stdfloat cy, PN_stdfloat cz, PN_stdfloat radius);
 
 protected:
   INLINE CollisionInvSphere();
@@ -42,7 +42,7 @@ public:
   virtual PStatCollector &get_volume_pcollector();
   virtual PStatCollector &get_test_pcollector();
 
-  virtual void output(ostream &out) const;
+  virtual void output(std::ostream &out) const;
 
 protected:
   virtual PT(BoundingVolume) compute_internal_bounds() const;

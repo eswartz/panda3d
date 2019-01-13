@@ -42,21 +42,20 @@ class EXPCL_PANDA_PIPELINE ConditionVar : public ConditionVarDirect
 #endif  // DEBUG_THREADS
 {
 PUBLISHED:
-  INLINE ConditionVar(Mutex &mutex);
-  INLINE ~ConditionVar();
-private:
-  INLINE ConditionVar(const ConditionVar &copy);
-  INLINE void operator = (const ConditionVar &copy);
+  INLINE explicit ConditionVar(Mutex &mutex);
+  ConditionVar(const ConditionVar &copy) = delete;
+  ~ConditionVar() = default;
 
-  // These methods are inherited from the base class.  INLINE void wait();
-  // INLINE void notify();
+  ConditionVar &operator = (const ConditionVar &copy) = delete;
 
-private:
+  // These methods are inherited from the base class.
+  //INLINE void wait();
+  //INLINE void notify();
+
   // The notify_all() method is specifically *not* provided by ConditionVar.
   // Use ConditionVarFull if you need to call this method.
-  INLINE void notify_all();
+  void notify_all() = delete;
 
-PUBLISHED:
   INLINE Mutex &get_mutex() const;
 };
 

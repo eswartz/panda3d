@@ -39,7 +39,7 @@
 #include "collisionSphere.h"
 #include "collisionBox.h"
 #include "collisionInvSphere.h"
-#include "collisionTube.h"
+#include "collisionCapsule.h"
 #include "textureStage.h"
 #include "geomNode.h"
 #include "geom.h"
@@ -74,6 +74,9 @@
 #include "eggTable.h"
 #include "dcast.h"
 
+using std::pair;
+using std::string;
+
 /**
  *
  */
@@ -81,7 +84,7 @@ EggSaver::
 EggSaver(EggData *data) :
   _data(data)
 {
-  if (_data == NULL) {
+  if (_data == nullptr) {
     _data = new EggData;
   }
 }
@@ -96,13 +99,13 @@ add_node(PandaNode *node) {
   _data->add_child(_vpool);
 
   NodePath root(node);
-  convert_node(WorkingNodePath(root), _data, false, NULL);
+  convert_node(WorkingNodePath(root), _data, false, nullptr);
 
   // Remove the vertex pool if it has no vertices.
   if (_vpool->empty()) {
     _data->remove_child(_vpool);
   }
-  _vpool = NULL;
+  _vpool = nullptr;
 }
 
 /**
@@ -116,13 +119,13 @@ add_subgraph(PandaNode *root) {
   _data->add_child(_vpool);
 
   NodePath root_path(root);
-  recurse_nodes(root_path, _data, false, NULL);
+  recurse_nodes(root_path, _data, false, nullptr);
 
   // Remove the vertex pool if it has no vertices.
   if (_vpool->empty()) {
     _data->remove_child(_vpool);
   }
-  _vpool = NULL;
+  _vpool = nullptr;
 }
 
 /**
@@ -180,7 +183,7 @@ convert_lod_node(LODNode *node, const WorkingNodePath &node_path,
   int num_children = node->get_num_children();
   int num_switches = node->get_num_switches();
 
-  num_children = min(num_children, num_switches);
+  num_children = std::min(num_children, num_switches);
 
   for (int i = 0; i < num_children; i++) {
     PandaNode *child = node->get_child(i);
@@ -277,7 +280,7 @@ convert_switch_node(SwitchNode *node, const WorkingNodePath &node_path,
 EggGroupNode * EggSaver::convert_animGroup_node(AnimGroup *animGroup, double fps ) {
   int num_children = animGroup->get_num_children();
 
-  EggGroupNode *eggNode = NULL;
+  EggGroupNode *eggNode = nullptr;
   if (animGroup->is_of_type(AnimBundle::get_class_type())) {
     EggTable *eggTable = new EggTable(animGroup->get_name());
     eggTable ->set_table_type(EggTable::TT_bundle);
@@ -308,8 +311,8 @@ EggGroupNode * EggSaver::convert_animGroup_node(AnimGroup *animGroup, double fps
   for (int i = 0; i < num_children; i++) {
     AnimGroup *animChild = animGroup->get_child(i);
     EggGroupNode *eggChildNode = convert_animGroup_node(animChild, fps);
-    if (eggChildNode!=NULL) {
-      nassertr(eggNode!=NULL, NULL);
+    if (eggChildNode!=nullptr) {
+      nassertr(eggNode!=nullptr, nullptr);
       eggNode->add_child(eggChildNode);
     }
   }
@@ -356,7 +359,7 @@ convert_character_bundle(PartGroup *bundleNode, EggGroupNode *egg_parent, Charac
     joint->set_group_type(EggGroup::GT_joint);
     joint_group = joint;
     egg_parent->add_child(joint_group);
-    if (joint_map != NULL) {
+    if (joint_map != nullptr) {
       CharacterJointMap::iterator mi = joint_map->find(character_joint);
       if (mi != joint_map->end()) {
         pvector<pair<EggVertex*,PN_stdfloat> > &joint_vertices = (*mi).second;
@@ -521,7 +524,7 @@ convert_collision_node(CollisionNode *node, const WorkingNodePath &node_path,
         // Get an arbitrary vector on the plane by taking the cross product
         // with any vector, as long as it is different.
         LVector3 vec1;
-        if (abs(normal[2]) > abs(normal[1])) {
+        if (std::fabs(normal[2]) > std::fabs(normal[1])) {
           vec1 = normal.cross(LVector3(0, 1, 0));
         } else {
           vec1 = normal.cross(LVector3(0, 0, 1));
@@ -578,33 +581,33 @@ convert_collision_node(CollisionNode *node, const WorkingNodePath &node_path,
         egg_poly->add_vertex(cvpool->create_unique_vertex(ev0));
         egg_poly->add_vertex(cvpool->create_unique_vertex(ev1));
 
-      } else if (child->is_of_type(CollisionTube::get_class_type())) {
-        CPT(CollisionTube) tube = DCAST(CollisionTube, child);
-        LPoint3 point_a = tube->get_point_a();
-        LPoint3 point_b = tube->get_point_b();
+      } else if (child->is_of_type(CollisionCapsule::get_class_type())) {
+        CPT(CollisionCapsule) capsule = DCAST(CollisionCapsule, child);
+        LPoint3 point_a = capsule->get_point_a();
+        LPoint3 point_b = capsule->get_point_b();
         LPoint3 centroid = (point_a + point_b) * 0.5f;
 
-        // Also get an arbitrary vector perpendicular to the tube.
+        // Also get an arbitrary vector perpendicular to the capsule.
         LVector3 axis = point_b - point_a;
         LVector3 sideways;
-        if (abs(axis[2]) > abs(axis[1])) {
+        if (std::fabs(axis[2]) > std::fabs(axis[1])) {
           sideways = axis.cross(LVector3(0, 1, 0));
         } else {
           sideways = axis.cross(LVector3(0, 0, 1));
         }
         sideways.normalize();
-        sideways *= tube->get_radius();
-        LVector3 extend = axis.normalized() * tube->get_radius();
+        sideways *= capsule->get_radius();
+        LVector3 extend = axis.normalized() * capsule->get_radius();
 
-        EggGroup *egg_tube;
+        EggGroup *egg_capsule;
         if (num_solids == 1) {
-          egg_tube = egg_group;
+          egg_capsule = egg_group;
         } else {
-          egg_tube = new EggGroup;
-          egg_group->add_child(egg_tube);
+          egg_capsule = new EggGroup;
+          egg_group->add_child(egg_capsule);
         }
-        egg_tube->set_cs_type(EggGroup::CST_tube);
-        egg_tube->set_collide_flags(flags);
+        egg_capsule->set_cs_type(EggGroup::CST_tube);
+        egg_capsule->set_collide_flags(flags);
 
         // Add two points for the endcaps, and then two points around the
         // centroid to indicate the radius.
@@ -615,7 +618,7 @@ convert_collision_node(CollisionNode *node, const WorkingNodePath &node_path,
         ev3.set_pos(LCAST(double, (centroid - sideways) * net_mat));
 
         EggPolygon *egg_poly = new EggPolygon;
-        egg_tube->add_child(egg_poly);
+        egg_capsule->add_child(egg_poly);
 
         egg_poly->add_vertex(cvpool->create_unique_vertex(ev0));
         egg_poly->add_vertex(cvpool->create_unique_vertex(ev1));
@@ -750,11 +753,11 @@ convert_primitive(const GeomVertexData *vertex_data,
   }
 
   // Check for a material.
-  EggMaterial *egg_mat = (EggMaterial *)NULL;
+  EggMaterial *egg_mat = nullptr;
   const MaterialAttrib *ma;
   if (net_state->get_attrib(ma)) {
     egg_mat = get_egg_material(ma->get_material());
-    if (egg_mat != (EggMaterial *)NULL) {
+    if (egg_mat != nullptr) {
       egg_prim->set_material(egg_mat);
     }
   }
@@ -764,9 +767,9 @@ convert_primitive(const GeomVertexData *vertex_data,
   if (net_state->get_attrib(ta)) {
     EggTexture *egg_tex = get_egg_texture(ta->get_texture());
 
-    if (egg_tex != (EggTexture *)NULL) {
+    if (egg_tex != nullptr) {
       TextureStage *tex_stage = ta->get_on_stage(0);
-      if (tex_stage != (TextureStage *)NULL) {
+      if (tex_stage != nullptr) {
         switch (tex_stage->get_mode()) {
         case TextureStage::M_modulate:
           if (has_color_off == true) {
@@ -800,7 +803,6 @@ convert_primitive(const GeomVertexData *vertex_data,
   }
 
   // Check the backface flag.
-  bool bface = false;
   const CullFaceAttrib *cfa;
   if (net_state->get_attrib(cfa)) {
     if (cfa->get_effective_mode() == CullFaceAttrib::M_cull_none) {
@@ -822,8 +824,6 @@ convert_primitive(const GeomVertexData *vertex_data,
     }
   }
 
-  LNormal normal;
-  LColor color;
   CPT(TransformBlendTable) transformBlendTable = vertex_data->get_transform_blend_table();
 
   int num_primitives = primitive->get_num_primitives();
@@ -872,7 +872,7 @@ convert_primitive(const GeomVertexData *vertex_data,
       EggVertex *new_egg_vert = _vpool->create_unique_vertex(egg_vert);
 
       if (vertex_data->has_column(InternalName::get_transform_blend()) &&
-          joint_map != NULL && transformBlendTable != NULL) {
+          joint_map != nullptr && transformBlendTable != nullptr) {
         reader.set_column(InternalName::get_transform_blend());
         int idx = reader.get_data1i();
         const TransformBlend &blend = transformBlendTable->get_blend(idx);
@@ -970,7 +970,7 @@ apply_node_properties(EggGroup *egg_group, PandaNode *node, bool allow_backstage
 
   const RenderEffects *effects = node->get_effects();
   const RenderEffect *effect = effects->get_effect(BillboardEffect::get_class_type());
-  if (effect != (RenderEffect *)NULL) {
+  if (effect != nullptr) {
     const BillboardEffect *bbe = DCAST(BillboardEffect, effect);
     if (bbe->get_axial_rotate()) {
       egg_group->set_billboard_type(EggGroup::BT_axis);
@@ -1112,7 +1112,7 @@ apply_state_properties(EggRenderMode *egg_render_mode, const RenderState *state)
  */
 bool EggSaver::
 apply_tags(EggGroup *egg_group, PandaNode *node) {
-  ostringstream strm;
+  std::ostringstream strm;
   char delimiter = '\n';
   string delimiter_str(1, delimiter);
   node->list_tags(strm, delimiter_str);
@@ -1162,7 +1162,7 @@ apply_tag(EggGroup *egg_group, PandaNode *node, const string &tag) {
  */
 EggMaterial *EggSaver::
 get_egg_material(Material *mat) {
-  if (mat != (Material *)NULL) {
+  if (mat != nullptr) {
     EggMaterial temp(mat->get_name());
     if (mat->has_base_color()) {
       temp.set_base(mat->get_base_color());
@@ -1203,7 +1203,7 @@ get_egg_material(Material *mat) {
     return _materials.create_unique_material(temp, ~EggMaterial::E_mref_name);
   }
 
-  return NULL;
+  return nullptr;
 }
 
 /**
@@ -1211,7 +1211,7 @@ get_egg_material(Material *mat) {
  */
 EggTexture *EggSaver::
 get_egg_texture(Texture *tex) {
-  if (tex != (Texture *)NULL) {
+  if (tex != nullptr) {
     if (tex->has_filename()) {
       Filename filename = tex->get_filename();
       EggTexture temp(filename.get_basename_wo_extension(), filename);
@@ -1347,5 +1347,5 @@ get_egg_texture(Texture *tex) {
     }
   }
 
-  return NULL;
+  return nullptr;
 }

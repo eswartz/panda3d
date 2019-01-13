@@ -19,6 +19,8 @@
 #include "datagram.h"
 #include "datagramIterator.h"
 
+using std::ostream;
+
 TypeHandle ColorBlendAttrib::_type_handle;
 int ColorBlendAttrib::_attrib_slot;
 
@@ -146,14 +148,6 @@ get_hash_impl() const {
   hash = _color.add_hash(hash);
 
   return hash;
-}
-
-/**
- *
- */
-CPT(RenderAttrib) ColorBlendAttrib::
-get_auto_shader_attrib_impl(const RenderState *state) const {
-  return this;
 }
 
 /**

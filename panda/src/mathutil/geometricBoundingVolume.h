@@ -51,8 +51,8 @@ PUBLISHED:
   virtual void xform(const LMatrix4 &mat)=0;
 
 public:
-  virtual GeometricBoundingVolume *as_geometric_bounding_volume() FINAL;
-  virtual const GeometricBoundingVolume *as_geometric_bounding_volume() const FINAL;
+  virtual GeometricBoundingVolume *as_geometric_bounding_volume() final;
+  virtual const GeometricBoundingVolume *as_geometric_bounding_volume() const final;
 
 protected:
   // Some virtual functions to implement fundamental bounding operations on
@@ -83,11 +83,9 @@ private:
   static TypeHandle _type_handle;
 };
 
-#ifdef DO_MEMORY_USAGE
 // We can safely redefine this as a no-op.
 template<>
 INLINE void PointerToBase<GeometricBoundingVolume>::update_type(To *ptr) {}
-#endif
 
 #include "geometricBoundingVolume.I"
 

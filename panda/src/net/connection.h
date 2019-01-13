@@ -28,7 +28,7 @@ class NetDatagram;
  */
 class EXPCL_PANDA_NET Connection : public ReferenceCount {
 PUBLISHED:
-  Connection(ConnectionManager *manager, Socket_IP *socket);
+  explicit Connection(ConnectionManager *manager, Socket_IP *socket);
   ~Connection();
 
   NetAddress get_address() const;
@@ -68,7 +68,7 @@ private:
   bool _collect_tcp;
   double _collect_tcp_interval;
   double _queued_data_start;
-  string _queued_data;
+  std::string _queued_data;
   int _queued_count;
 
   friend class ConnectionWriter;

@@ -19,6 +19,9 @@
 #include <stdarg.h>
 #include <stdio.h>   // for sprintf()
 
+using std::istream;
+using std::ostream;
+
 
 /**
  * Outputs the given printf-style message to the user and returns.
@@ -117,7 +120,7 @@ int
 pm_readbigshort(istream *in, short *sP) {
   StreamReader reader(in, false);
   *sP = reader.get_be_int16();
-  return (!in->eof() && !in->fail()) ? 0 : -1;
+  return (!in->fail()) ? 0 : -1;
 }
 
 int
@@ -131,7 +134,7 @@ int
 pm_readbiglong(istream *in, long *lP) {
   StreamReader reader(in, false);
   *lP = reader.get_be_int32();
-  return (!in->eof() && !in->fail()) ? 0 : -1;
+  return (!in->fail()) ? 0 : -1;
 }
 
 int
@@ -145,7 +148,7 @@ int
 pm_readlittleshort(istream *in, short *sP) {
   StreamReader reader(in, false);
   *sP = reader.get_int16();
-  return (!in->eof() && !in->fail()) ? 0 : -1;
+  return (!in->fail()) ? 0 : -1;
 }
 
 int
@@ -159,7 +162,7 @@ int
 pm_readlittlelong(istream *in, long *lP) {
   StreamReader reader(in, false);
   *lP = reader.get_int32();
-  return (!in->eof() && !in->fail()) ? 0 : -1;
+  return (!in->fail()) ? 0 : -1;
 }
 
 int

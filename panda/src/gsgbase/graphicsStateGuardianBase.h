@@ -198,15 +198,18 @@ public:
   // friends of this class.
 
   virtual bool begin_draw_primitives(const GeomPipelineReader *geom_reader,
-                                     const GeomMunger *munger,
                                      const GeomVertexDataPipelineReader *data_reader,
                                      bool force)=0;
   virtual bool draw_triangles(const GeomPrimitivePipelineReader *reader, bool force)=0;
+  virtual bool draw_triangles_adj(const GeomPrimitivePipelineReader *reader, bool force)=0;
   virtual bool draw_tristrips(const GeomPrimitivePipelineReader *reader, bool force)=0;
+  virtual bool draw_tristrips_adj(const GeomPrimitivePipelineReader *reader, bool force)=0;
   virtual bool draw_trifans(const GeomPrimitivePipelineReader *reader, bool force)=0;
   virtual bool draw_patches(const GeomPrimitivePipelineReader *reader, bool force)=0;
   virtual bool draw_lines(const GeomPrimitivePipelineReader *reader, bool force)=0;
+  virtual bool draw_lines_adj(const GeomPrimitivePipelineReader *reader, bool force)=0;
   virtual bool draw_linestrips(const GeomPrimitivePipelineReader *reader, bool force)=0;
+  virtual bool draw_linestrips_adj(const GeomPrimitivePipelineReader *reader, bool force)=0;
   virtual bool draw_points(const GeomPrimitivePipelineReader *reader, bool force)=0;
   virtual void end_draw_primitives()=0;
 
@@ -224,6 +227,17 @@ public:
   virtual void bind_light(Spotlight *light_obj, const NodePath &light,
                           int light_id) { }
 
+  virtual void ensure_generated_shader(const RenderState *state)=0;
+
+  static void mark_rehash_generated_shaders() {
+#ifdef HAVE_CG
+    ++_generated_shader_seq;
+#endif
+  }
+
+  virtual void push_group_marker(const std::string &marker) {}
+  virtual void pop_group_marker() {}
+
 PUBLISHED:
   static GraphicsStateGuardianBase *get_default_gsg();
   static void set_default_gsg(GraphicsStateGuardianBase *default_gsg);
@@ -236,6 +250,8 @@ public:
   static void add_gsg(GraphicsStateGuardianBase *gsg);
   static void remove_gsg(GraphicsStateGuardianBase *gsg);
 
+  size_t _id;
+
 private:
   struct GSGList {
     LightMutex _lock;
@@ -245,6 +261,9 @@ private:
     GraphicsStateGuardianBase *_default_gsg;
   };
   static AtomicAdjust::Pointer _gsg_list;
+
+protected:
+  static UpdateSeq _generated_shader_seq;
 
 public:
   static TypeHandle get_class_type() {

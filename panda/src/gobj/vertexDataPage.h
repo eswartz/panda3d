@@ -64,6 +64,7 @@ PUBLISHED:
   INLINE static SimpleLru *get_global_lru(RamClass rclass);
   INLINE static SimpleLru *get_pending_lru();
   INLINE static VertexDataSaveFile *get_save_file();
+  MAKE_PROPERTY(save_file, get_save_file);
 
   INLINE bool save_to_disk();
 
@@ -73,8 +74,8 @@ PUBLISHED:
   static void stop_threads();
   static void flush_threads();
 
-  virtual void output(ostream &out) const;
-  virtual void write(ostream &out, int indent_level) const;
+  virtual void output(std::ostream &out) const;
+  virtual void write(std::ostream &out, int indent_level) const;
 
 public:
   INLINE unsigned char *get_page_data(bool force);
@@ -113,7 +114,7 @@ private:
   class PageThreadManager;
   class EXPCL_PANDA_GOBJ PageThread : public Thread {
   public:
-    PageThread(PageThreadManager *manager, const string &name);
+    PageThread(PageThreadManager *manager, const std::string &name);
 
   protected:
     virtual void thread_main();
@@ -175,7 +176,7 @@ private:
   public:
     DeflatePage() {
       _used_size = 0;
-      _next = NULL;
+      _next = nullptr;
     }
     ALLOC_DELETED_CHAIN(DeflatePage);
 
@@ -227,7 +228,7 @@ private:
   friend class VertexDataBook;
 };
 
-inline ostream &operator << (ostream &out, const VertexDataPage &page) {
+inline std::ostream &operator << (std::ostream &out, const VertexDataPage &page) {
   page.output(out);
   return out;
 }

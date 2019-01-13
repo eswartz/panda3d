@@ -14,6 +14,8 @@
 #include "streamReader.h"
 #include "memoryHook.h"
 
+using std::string;
+
 
 /**
  * Extracts a variable-length string.
@@ -24,6 +26,9 @@ get_string() {
 
   // First, get the length of the string
   size_t size = get_uint16();
+  if (size == 0) {
+    return string();
+  }
 
   char *buffer = (char *)alloca(size);
   _in->read(buffer, size);
@@ -40,6 +45,9 @@ get_string32() {
 
   // First, get the length of the string
   size_t size = get_uint32();
+  if (size == 0) {
+    return string();
+  }
 
   char *buffer = (char *)PANDA_MALLOC_ARRAY(size);
   _in->read(buffer, size);
@@ -58,7 +66,7 @@ get_z_string() {
 
   string result;
   int ch = _in->get();
-  while (!_in->eof() && !_in->fail() && ch != '\0') {
+  while (!_in->fail() && ch != EOF && ch != '\0') {
     result += (char)ch;
     ch = _in->get();
   }
@@ -74,6 +82,10 @@ string StreamReader::
 get_fixed_string(size_t size) {
   nassertr(!_in->eof() && !_in->fail(), string());
 
+  if (size == 0) {
+    return string();
+  }
+
   char *buffer = (char *)alloca(size);
   _in->read(buffer, size);
   size_t read_bytes = _in->gcount();
@@ -88,8 +100,9 @@ get_fixed_string(size_t size) {
  */
 void StreamReader::
 skip_bytes(size_t size) {
-  nassertv(!_in->eof() && !_in->fail());
+  nassertv(!_in->fail());
   nassertv((int)size >= 0);
+  nassertv(size == 0 || !_in->eof());
 
   while (size > 0) {
     _in->get();
@@ -117,16 +130,18 @@ extract_bytes(unsigned char *into, size_t size) {
  * Extracts the indicated number of bytes in the stream and returns them as a
  * string.  Returns empty string at end-of-file.
  */
-string StreamReader::
+vector_uchar StreamReader::
 extract_bytes(size_t size) {
+  vector_uchar buffer;
   if (_in->eof() || _in->fail()) {
-    return string();
+    return buffer;
   }
 
-  char *buffer = (char *)alloca(size);
-  _in->read(buffer, size);
+  buffer.resize(size);
+  _in->read((char *)&buffer[0], size);
   size_t read_bytes = _in->gcount();
-  return string(buffer, read_bytes);
+  buffer.resize(read_bytes);
+  return buffer;
 }
 
 /**
@@ -141,9 +156,9 @@ string StreamReader::
 readline() {
   string line;
   int ch = _in->get();
-  while (!_in->eof() && !_in->fail()) {
+  while (ch != EOF && !_in->fail()) {
     line += (char)ch;
-    if (ch == '\n') {
+    if (ch == '\n' || _in->eof()) {
       // Here's the newline character.
       return line;
     }

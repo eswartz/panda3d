@@ -38,7 +38,7 @@ CPT(RenderAttrib) TexMatrixAttrib::
 make() {
   // We make it a special case and store a pointer to the empty attrib forever
   // once we find it the first time, as an optimization.
-  if (_empty_attrib == (RenderAttrib *)NULL) {
+  if (_empty_attrib == nullptr) {
     _empty_attrib = return_new(new TexMatrixAttrib);
   }
 
@@ -148,7 +148,7 @@ get_num_stages() const {
  */
 TextureStage *TexMatrixAttrib::
 get_stage(int n) const {
-  nassertr(n >= 0 && n < (int)_stages.size(), NULL);
+  nassertr(n >= 0 && n < (int)_stages.size(), nullptr);
   return _stages[n]._stage;
 }
 
@@ -179,7 +179,7 @@ get_transform(TextureStage *stage) const {
  *
  */
 void TexMatrixAttrib::
-output(ostream &out) const {
+output(std::ostream &out) const {
   out << get_type() << ":";
 
   Stages::const_iterator mi;
@@ -416,28 +416,6 @@ invert_compose_impl(const RenderAttrib *other) const {
 }
 
 /**
- *
- */
-CPT(RenderAttrib) TexMatrixAttrib::
-get_auto_shader_attrib_impl(const RenderState *state) const {
-  // For a TexMatrixAttrib, the particular matrix per TextureStage isn't
-  // important, just whether there is a matrix at all.  So we create a new
-  // state with an identity matrix everywhere there is a matrix at all in the
-  // original.
-
-  TexMatrixAttrib *attrib = new TexMatrixAttrib;
-
-  Stages::const_iterator ai;
-  for (ai = _stages.begin(); ai != _stages.end(); ++ai) {
-    StageNode sn((*ai)._stage);
-    sn._transform = TransformState::make_identity();
-    attrib->_stages.insert(attrib->_stages.end(), sn);
-  }
-
-  return return_new(attrib);
-}
-
-/**
  * Tells the BamReader how to create objects of type TexMatrixAttrib.
  */
 void TexMatrixAttrib::
@@ -526,7 +504,7 @@ fillin(DatagramIterator &scan, BamReader *manager) {
       override = scan.get_int32();
     }
 
-    StageNode sn(NULL);
+    StageNode sn(nullptr);
     sn._override = override;
     _stages.push_back(sn);
   }

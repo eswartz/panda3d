@@ -45,13 +45,12 @@ class EXPCL_PANDA_PIPELINE ConditionVarFull : public ConditionVarFullDirect
 #endif  // DEBUG_THREADS
 {
 PUBLISHED:
-  INLINE ConditionVarFull(Mutex &mutex);
-  INLINE ~ConditionVarFull();
-private:
-  INLINE ConditionVarFull(const ConditionVarFull &copy);
-  INLINE void operator = (const ConditionVarFull &copy);
+  INLINE explicit ConditionVarFull(Mutex &mutex);
+  ConditionVarFull(const ConditionVarFull &copy) = delete;
+  ~ConditionVarFull() = default;
 
-PUBLISHED:
+  ConditionVarFull &operator = (const ConditionVarFull &copy) = delete;
+
   INLINE Mutex &get_mutex() const;
 };
 

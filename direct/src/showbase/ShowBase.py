@@ -10,8 +10,9 @@ __all__ = ['ShowBase', 'WindowControls']
 #import VerboseImport
 
 from panda3d.core import *
-from panda3d.direct import get_config_showbase, throw_new_frame, init_app_for_gui
+from panda3d.direct import throw_new_frame, init_app_for_gui
 from panda3d.direct import storeAccessibilityShortcutKeys, allowAccessibilityShortcutKeys
+from . import DConfig
 
 # Register the extension methods for NodePath.
 from direct.extensions_native import NodePath_extensions
@@ -22,7 +23,7 @@ if sys.version_info >= (3, 0):
     import builtins
 else:
     import __builtin__ as builtins
-builtins.config = get_config_showbase()
+builtins.config = DConfig
 
 from direct.directnotify.DirectNotifyGlobal import directNotify, giveNotify
 from .MessengerGlobal import messenger
@@ -47,10 +48,6 @@ if __debug__:
     from . import OnScreenDebug
 from . import AppRunnerGlobal
 
-def legacyRun():
-    assert builtins.base.notify.warning("run() is deprecated, use base.run() instead")
-    builtins.base.run()
-
 @atexit.register
 def exitfunc():
     if getattr(builtins, 'base', None) is not None:
@@ -61,7 +58,7 @@ def exitfunc():
 # *seem* to cause anyone any problems.
 class ShowBase(DirectObject.DirectObject):
 
-    config = get_config_showbase()
+    config = DConfig
     notify = directNotify.newCategory("ShowBase")
 
     def __init__(self, fStartDirect = True, windowType = None):
@@ -173,6 +170,7 @@ class ShowBase(DirectObject.DirectObject):
         self.trackball = None
         self.texmem = None
         self.showVertices = None
+        self.deviceButtonThrowers = []
 
         ## This is a NodePath pointing to the Camera object set up for the 3D scene.
         ## This is usually a child of self.camera.
@@ -297,6 +295,7 @@ class ShowBase(DirectObject.DirectObject):
         ## The global job manager, as imported from JobManagerGlobal.
         self.jobMgr = jobMgr
 
+
         ## Particle manager
         self.particleMgr = None
         self.particleMgrEnabled = 0
@@ -305,6 +304,11 @@ class ShowBase(DirectObject.DirectObject):
         self.physicsMgr = None
         self.physicsMgrEnabled = 0
         self.physicsMgrAngular = 0
+
+        ## This is the global input device manager, which keeps track of
+        ## connected input devices.
+        self.devices = InputDeviceManager.getGlobalPtr()
+        self.__inputDeviceNodes = {}
 
         self.createStats()
 
@@ -369,7 +373,6 @@ class ShowBase(DirectObject.DirectObject):
         builtins.bboard = self.bboard
         # Config needs to be defined before ShowBase is constructed
         #builtins.config = self.config
-        builtins.run = legacyRun
         builtins.ostream = Notify.out()
         builtins.directNotify = directNotify
         builtins.giveNotify = giveNotify
@@ -389,6 +392,12 @@ class ShowBase(DirectObject.DirectObject):
             builtins.aspect2dp = self.aspect2dp
             builtins.pixel2dp = self.pixel2dp
 
+        # Now add this instance to the ShowBaseGlobal module scope.
+        from . import ShowBaseGlobal
+        builtins.run = ShowBaseGlobal.run
+        ShowBaseGlobal.base = self
+        ShowBaseGlobal.__dev__ = self.__dev__
+
         if self.__dev__:
             ShowBase.notify.debug('__dev__ == %s' % self.__dev__)
         else:
@@ -396,10 +405,10 @@ class ShowBase(DirectObject.DirectObject):
 
         self.createBaseAudioManagers()
 
-        if self.__dev__ or self.config.GetBool('want-e3-hacks', False):
-            if self.config.GetBool('track-gui-items', True):
-                # dict of guiId to gui item, for tracking down leaks
-                self.guiItems = {}
+        if self.__dev__ and self.config.GetBool('track-gui-items', False):
+            # dict of guiId to gui item, for tracking down leaks
+            if not hasattr(ShowBase, 'guiItems'):
+                ShowBase.guiItems = {}
 
         # optionally restore the default gui sounds from 1.7.2 and earlier
         if ConfigVariableBool('orig-gui-sounds', False).getValue():
@@ -511,9 +520,15 @@ class ShowBase(DirectObject.DirectObject):
 
         # Remove the built-in base reference
         if getattr(builtins, 'base', None) is self:
+            del builtins.run
             del builtins.base
             del builtins.loader
             del builtins.taskMgr
+            ShowBaseGlobal = sys.modules.get('direct.showbase.ShowBaseGlobal', None)
+            if ShowBaseGlobal:
+                del ShowBaseGlobal.base
+
+        self.aspect2d.node().removeAllChildren()
 
         # [gjeon] restore sticky key settings
         if self.config.GetBool('disable-sticky-keys', 0):
@@ -968,7 +983,9 @@ class ShowBase(DirectObject.DirectObject):
             if isinstance(self.win, GraphicsWindow):
                 self.setupMouse(self.win)
             self.makeCamera2d(self.win)
-            self.makeCamera2dp(self.win)
+
+            if self.wantRender2dp:
+                self.makeCamera2dp(self.win)
 
             if oldLens != None:
                 # Restore the previous lens properties.
@@ -1095,13 +1112,18 @@ class ShowBase(DirectObject.DirectObject):
         self.render2d.setMaterialOff(1)
         self.render2d.setTwoSided(1)
 
+        # We've already created aspect2d in ShowBaseGlobal, for the
+        # benefit of creating DirectGui elements before ShowBase.
+        from . import ShowBaseGlobal
+
         ## The normal 2-d DisplayRegion has an aspect ratio that
         ## matches the window, but its coordinate system is square.
         ## This means anything we parent to render2d gets stretched.
         ## For things where that makes a difference, we set up
         ## aspect2d, which scales things back to the right aspect
         ## ratio along the X axis (Z is still from -1 to 1)
-        self.aspect2d = self.render2d.attachNewNode(PGTop("aspect2d"))
+        self.aspect2d = ShowBaseGlobal.aspect2d
+        self.aspect2d.reparentTo(self.render2d)
 
         aspectRatio = self.getAspectRatio()
         self.aspect2d.setScale(1.0 / aspectRatio, 1.0, 1.0)
@@ -1260,7 +1282,6 @@ class ShowBase(DirectObject.DirectObject):
 
         if win != None and win.hasSize() and win.getSbsLeftYSize() != 0:
             aspectRatio = float(win.getSbsLeftXSize()) / float(win.getSbsLeftYSize())
-
         else:
             if win == None or not hasattr(win, "getRequestedProperties"):
                 props = WindowProperties.getDefault()
@@ -1295,8 +1316,7 @@ class ShowBase(DirectObject.DirectObject):
                 if not props.hasSize():
                     props = WindowProperties.getDefault()
 
-            if props.hasSize():
-                return props.getXSize(), props.getYSize()
+            return props.getXSize(), props.getYSize()
 
     def makeCamera(self, win, sort = 0, scene = None,
                    displayRegion = (0, 1, 0, 1), stereo = None,
@@ -1541,8 +1561,7 @@ class ShowBase(DirectObject.DirectObject):
             # mouse activity.
             mw = self.buttonThrowers[0].getParent()
             mouseRecorder = MouseRecorder('mouse')
-            self.recorder.addRecorder(
-                'mouse', mouseRecorder.upcastToRecorderBase())
+            self.recorder.addRecorder('mouse', mouseRecorder)
             np = mw.getParent().attachNewNode(mouseRecorder)
             mw.reparentTo(np)
 
@@ -1560,9 +1579,11 @@ class ShowBase(DirectObject.DirectObject):
 
         # Tell the gui system about our new mouse watcher.
         self.aspect2d.node().setMouseWatcher(mw.node())
-        self.aspect2dp.node().setMouseWatcher(mw.node())
         self.pixel2d.node().setMouseWatcher(mw.node())
-        self.pixel2dp.node().setMouseWatcher(mw.node())
+        if self.wantRender2dp:
+            self.aspect2dp.node().setMouseWatcher(mw.node())
+            self.pixel2dp.node().setMouseWatcher(mw.node())
+
         mw.node().addRegion(PGMouseWatcherBackground())
 
         return self.buttonThrowers[0]
@@ -1655,6 +1676,57 @@ class ShowBase(DirectObject.DirectObject):
     def getMeta(self):
         return self.mouseWatcherNode.getModifierButtons().isDown(
             KeyboardButton.meta())
+
+    def attachInputDevice(self, device, prefix=None):
+        """
+        This function attaches an input device to the data graph, which will
+        cause the device to be polled and generate events.  If a prefix is
+        given and not None, it is used to prefix events generated by this
+        device, separated by a hyphen.
+
+        If you call this, you should consider calling detachInputDevice when
+        you are done with the device or when it is disconnected.
+        """
+
+        # Protect against the same device being attached multiple times.
+        assert device not in self.__inputDeviceNodes
+
+        idn = self.dataRoot.attachNewNode(InputDeviceNode(device, device.name))
+
+        # Setup the button thrower to generate events for the device.
+        bt = idn.attachNewNode(ButtonThrower(device.name))
+        if prefix is not None:
+            bt.node().setPrefix(prefix + '-')
+
+        assert self.notify.debug("Attached input device {0} with prefix {1}".format(device, prefix))
+        self.__inputDeviceNodes[device] = idn
+        self.deviceButtonThrowers.append(bt)
+
+    def detachInputDevice(self, device):
+        """
+        This should be called after attaching an input device using
+        attachInputDevice and the device is disconnected or you no longer wish
+        to keep polling this device for events.
+
+        You do not strictly need to call this if you expect the device to be
+        reconnected (but be careful that you don't reattach it).
+        """
+
+        if device not in self.__inputDeviceNodes:
+            assert device in self.__inputDeviceNodes
+            return
+
+        assert self.notify.debug("Detached device {0}".format(device.name))
+
+        # Remove the ButtonThrower from the deviceButtonThrowers list.
+        idn = self.__inputDeviceNodes[device]
+        for bt in self.deviceButtonThrowers:
+            if idn.isAncestorOf(bt):
+                self.deviceButtonThrowers.remove(bt)
+                break
+
+        idn.removeNode()
+        del self.__inputDeviceNodes[device]
 
     def addAngularIntegrator(self):
         if not self.physicsMgrAngular:
@@ -1845,6 +1917,9 @@ class ShowBase(DirectObject.DirectObject):
         return Task.cont
 
     def __dataLoop(self, state):
+        # Check if there were newly connected devices.
+        self.devices.update()
+
         # traverse the data graph.  This reads all the control
         # inputs (from the mouse and keyboard, for instance) and also
         # directly acts upon them (for instance, to move the avatar).
@@ -2659,15 +2734,18 @@ class ShowBase(DirectObject.DirectObject):
           output file name (e.g. if sd = 4, movie_0001.png)
         - source is the Window, Buffer, DisplayRegion, or Texture from which
           to save the resulting images.  The default is the main window.
+
+        The task is returned, so that it can be awaited.
         """
         globalClock.setMode(ClockObject.MNonRealTime)
         globalClock.setDt(1.0/float(fps))
-        t = taskMgr.add(self._movieTask, namePrefix + '_task')
+        t = self.taskMgr.add(self._movieTask, namePrefix + '_task')
         t.frameIndex = 0  # Frame 0 is not captured.
         t.numFrames = int(duration * fps)
         t.source = source
         t.outputString = namePrefix + '_%0' + repr(sd) + 'd.' + format
         t.setUponDeath(lambda state: globalClock.setMode(ClockObject.MNormal))
+        return t
 
     def _movieTask(self, state):
         if state.frameIndex != 0:
@@ -2723,13 +2801,16 @@ class ShowBase(DirectObject.DirectObject):
             # changed and update the camera lenses and aspect2d parameters
             self.adjustWindowAspectRatio(self.getAspectRatio())
 
-            # Temporary hasattr for old Pandas
-            if not hasattr(win, 'getSbsLeftXSize'):
-                self.pixel2d.setScale(2.0 / win.getXSize(), 1.0, 2.0 / win.getYSize())
-                self.pixel2dp.setScale(2.0 / win.getXSize(), 1.0, 2.0 / win.getYSize())
-            else:
+            if win.hasSize() and win.getSbsLeftYSize() != 0:
                 self.pixel2d.setScale(2.0 / win.getSbsLeftXSize(), 1.0, 2.0 / win.getSbsLeftYSize())
-                self.pixel2dp.setScale(2.0 / win.getSbsLeftXSize(), 1.0, 2.0 / win.getSbsLeftYSize())
+                if self.wantRender2dp:
+                    self.pixel2dp.setScale(2.0 / win.getSbsLeftXSize(), 1.0, 2.0 / win.getSbsLeftYSize())
+            else:
+                xsize, ysize = self.getSize()
+                if xsize > 0 and ysize > 0:
+                    self.pixel2d.setScale(2.0 / xsize, 1.0, 2.0 / ysize)
+                    if self.wantRender2dp:
+                        self.pixel2dp.setScale(2.0 / xsize, 1.0, 2.0 / ysize)
 
     def adjustWindowAspectRatio(self, aspectRatio):
         """ This function is normally called internally by
@@ -2753,11 +2834,12 @@ class ShowBase(DirectObject.DirectObject):
                 self.a2dLeft = -1
                 self.a2dRight = 1.0
                 # Don't forget 2dp
-                self.aspect2dp.setScale(1.0, aspectRatio, aspectRatio)
-                self.a2dpTop = 1.0 / aspectRatio
-                self.a2dpBottom = - 1.0 / aspectRatio
-                self.a2dpLeft = -1
-                self.a2dpRight = 1.0
+                if self.wantRender2dp:
+                    self.aspect2dp.setScale(1.0, aspectRatio, aspectRatio)
+                    self.a2dpTop = 1.0 / aspectRatio
+                    self.a2dpBottom = - 1.0 / aspectRatio
+                    self.a2dpLeft = -1
+                    self.a2dpRight = 1.0
 
             else:
                 # If the window is WIDE, lets expand the left and right
@@ -2767,41 +2849,43 @@ class ShowBase(DirectObject.DirectObject):
                 self.a2dLeft = -aspectRatio
                 self.a2dRight = aspectRatio
                 # Don't forget 2dp
-                self.aspect2dp.setScale(1.0 / aspectRatio, 1.0, 1.0)
-                self.a2dpTop = 1.0
-                self.a2dpBottom = -1.0
-                self.a2dpLeft = -aspectRatio
-                self.a2dpRight = aspectRatio
+                if self.wantRender2dp:
+                    self.aspect2dp.setScale(1.0 / aspectRatio, 1.0, 1.0)
+                    self.a2dpTop = 1.0
+                    self.a2dpBottom = -1.0
+                    self.a2dpLeft = -aspectRatio
+                    self.a2dpRight = aspectRatio
 
             # Reposition the aspect2d marker nodes
-            self.a2dTopCenter.setPos(0, self.a2dTop, self.a2dTop)
-            self.a2dBottomCenter.setPos(0, self.a2dBottom, self.a2dBottom)
+            self.a2dTopCenter.setPos(0, 0, self.a2dTop)
+            self.a2dTopCenterNs.setPos(0, 0, self.a2dTop)
+            self.a2dBottomCenter.setPos(0, 0, self.a2dBottom)
+            self.a2dBottomCenterNs.setPos(0, 0, self.a2dBottom)
             self.a2dLeftCenter.setPos(self.a2dLeft, 0, 0)
-            self.a2dRightCenter.setPos(self.a2dRight, 0, 0)
-            self.a2dTopLeft.setPos(self.a2dLeft, self.a2dTop, self.a2dTop)
-            self.a2dTopRight.setPos(self.a2dRight, self.a2dTop, self.a2dTop)
-            self.a2dBottomLeft.setPos(self.a2dLeft, self.a2dBottom, self.a2dBottom)
-            self.a2dBottomRight.setPos(self.a2dRight, self.a2dBottom, self.a2dBottom)
-
-            # Reposition the aspect2d marker nodes
-            self.a2dTopCenterNs.setPos(0, self.a2dTop, self.a2dTop)
-            self.a2dBottomCenterNs.setPos(0, self.a2dBottom, self.a2dBottom)
             self.a2dLeftCenterNs.setPos(self.a2dLeft, 0, 0)
+            self.a2dRightCenter.setPos(self.a2dRight, 0, 0)
             self.a2dRightCenterNs.setPos(self.a2dRight, 0, 0)
-            self.a2dTopLeftNs.setPos(self.a2dLeft, self.a2dTop, self.a2dTop)
-            self.a2dTopRightNs.setPos(self.a2dRight, self.a2dTop, self.a2dTop)
-            self.a2dBottomLeftNs.setPos(self.a2dLeft, self.a2dBottom, self.a2dBottom)
-            self.a2dBottomRightNs.setPos(self.a2dRight, self.a2dBottom, self.a2dBottom)
+
+            self.a2dTopLeft.setPos(self.a2dLeft, 0, self.a2dTop)
+            self.a2dTopLeftNs.setPos(self.a2dLeft, 0, self.a2dTop)
+            self.a2dTopRight.setPos(self.a2dRight, 0, self.a2dTop)
+            self.a2dTopRightNs.setPos(self.a2dRight, 0, self.a2dTop)
+            self.a2dBottomLeft.setPos(self.a2dLeft, 0, self.a2dBottom)
+            self.a2dBottomLeftNs.setPos(self.a2dLeft, 0, self.a2dBottom)
+            self.a2dBottomRight.setPos(self.a2dRight, 0, self.a2dBottom)
+            self.a2dBottomRightNs.setPos(self.a2dRight, 0, self.a2dBottom)
 
             # Reposition the aspect2dp marker nodes
-            self.a2dpTopCenter.setPos(0, self.a2dpTop, self.a2dpTop)
-            self.a2dpBottomCenter.setPos(0, self.a2dpBottom, self.a2dpBottom)
-            self.a2dpLeftCenter.setPos(self.a2dpLeft, 0, 0)
-            self.a2dpRightCenter.setPos(self.a2dpRight, 0, 0)
-            self.a2dpTopLeft.setPos(self.a2dpLeft, self.a2dpTop, self.a2dpTop)
-            self.a2dpTopRight.setPos(self.a2dpRight, self.a2dpTop, self.a2dpTop)
-            self.a2dpBottomLeft.setPos(self.a2dpLeft, self.a2dpBottom, self.a2dpBottom)
-            self.a2dpBottomRight.setPos(self.a2dpRight, self.a2dpBottom, self.a2dpBottom)
+            if self.wantRender2dp:
+                self.a2dpTopCenter.setPos(0, 0, self.a2dpTop)
+                self.a2dpBottomCenter.setPos(0, 0, self.a2dpBottom)
+                self.a2dpLeftCenter.setPos(self.a2dpLeft, 0, 0)
+                self.a2dpRightCenter.setPos(self.a2dpRight, 0, 0)
+
+                self.a2dpTopLeft.setPos(self.a2dpLeft, 0, self.a2dpTop)
+                self.a2dpTopRight.setPos(self.a2dpRight, 0, self.a2dpTop)
+                self.a2dpBottomLeft.setPos(self.a2dpLeft, 0, self.a2dpBottom)
+                self.a2dpBottomRight.setPos(self.a2dpRight, 0, self.a2dpBottom)
 
             # If anybody needs to update their GUI, put a callback on this event
             messenger.send("aspectRatioChanged")
@@ -2842,7 +2926,7 @@ class ShowBase(DirectObject.DirectObject):
 
         if not self.wxApp:
             # Create a new base.wxApp.
-            self.wxApp = wx.PySimpleApp(redirect = False)
+            self.wxApp = wx.App(redirect = False)
 
         if ConfigVariableBool('wx-main-loop', True):
             # Put wxPython in charge of the main loop.  It really
@@ -3051,6 +3135,8 @@ class ShowBase(DirectObject.DirectObject):
     setup_mouse = setupMouse
     setup_mouse_cb = setupMouseCB
     enable_software_mouse_pointer = enableSoftwareMousePointer
+    detach_input_device = detachInputDevice
+    attach_input_device = attachInputDevice
     add_angular_integrator = addAngularIntegrator
     enable_particles = enableParticles
     disable_particles = disableParticles
